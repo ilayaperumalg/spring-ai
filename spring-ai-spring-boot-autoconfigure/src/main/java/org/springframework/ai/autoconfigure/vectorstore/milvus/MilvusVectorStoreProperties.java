@@ -22,6 +22,7 @@ import org.springframework.util.Assert;
 
 /**
  * @author Christian Tzolov
+ * @author Ilayaperumal Gopinathan
  */
 @ConfigurationProperties(MilvusVectorStoreProperties.CONFIG_PREFIX)
 public class MilvusVectorStoreProperties extends CommonVectorStoreProperties {
@@ -57,6 +58,26 @@ public class MilvusVectorStoreProperties extends CommonVectorStoreProperties {
 	 * The index parameters to be used for the Milvus collection.
 	 */
 	private String indexParameters = "{\"nlist\":1024}";
+
+	/**
+	 * The ID field name for the collection
+	 */
+	private String idFieldName = MilvusVectorStore.DOC_ID_FIELD_NAME;
+
+	/**
+	 * The content field name for the collection
+	 */
+	private String contentFieldName = MilvusVectorStore.CONTENT_FIELD_NAME;
+
+	/**
+	 * The metadata field name for the collection
+	 */
+	private String metadataFieldName = MilvusVectorStore.METADATA_FIELD_NAME;
+
+	/**
+	 * The embedding field name for the collection
+	 */
+	private String embeddingFieldName = MilvusVectorStore.EMBEDDING_FIELD_NAME;
 
 	public enum MilvusMetricType {
 
@@ -148,4 +169,39 @@ public class MilvusVectorStoreProperties extends CommonVectorStoreProperties {
 		this.indexParameters = indexParameters;
 	}
 
+	public String getIdFieldName() {
+		return idFieldName;
+	}
+
+	public void setIdFieldName(String idFieldName) {
+		Assert.notNull(idFieldName, "idFieldName can not be null");
+		this.idFieldName = idFieldName;
+	}
+
+	public String getContentFieldName() {
+		return contentFieldName;
+	}
+
+	public void setContentFieldName(String contentFieldName) {
+		Assert.notNull(contentFieldName, "contentFieldName can not be null");
+		this.contentFieldName = contentFieldName;
+	}
+
+	public String getMetadataFieldName() {
+		return metadataFieldName;
+	}
+
+	public void setMetadataFieldName(String metadataFieldName) {
+		Assert.notNull(metadataFieldName, "metadataFieldName can not be null");
+		this.metadataFieldName = metadataFieldName;
+	}
+
+	public String getEmbeddingFieldName() {
+		return embeddingFieldName;
+	}
+
+	public void setEmbeddingFieldName(String embeddingFieldName) {
+		Assert.notNull(embeddingFieldName, "embeddingFieldName can not be null");
+		this.embeddingFieldName = embeddingFieldName;
+	}
 }

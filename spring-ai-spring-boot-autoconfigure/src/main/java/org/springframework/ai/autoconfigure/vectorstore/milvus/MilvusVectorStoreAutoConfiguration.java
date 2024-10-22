@@ -73,6 +73,10 @@ public class MilvusVectorStoreAutoConfiguration {
 			.withMetricType(MetricType.valueOf(properties.getMetricType().name()))
 			.withIndexParameters(properties.getIndexParameters())
 			.withEmbeddingDimension(properties.getEmbeddingDimension())
+			.withIDFieldName(properties.getIdFieldName())
+			.withContentFieldName(properties.getContentFieldName())
+			.withMetadataFieldName(properties.getMetadataFieldName())
+			.withEmbeddingFieldName(properties.getEmbeddingFieldName())
 			.build();
 
 		return new MilvusVectorStore(milvusClient, embeddingModel, config, properties.isInitializeSchema(),
