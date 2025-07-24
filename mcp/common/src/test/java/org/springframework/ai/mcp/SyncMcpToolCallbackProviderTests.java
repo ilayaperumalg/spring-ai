@@ -208,6 +208,7 @@ class SyncMcpToolCallbackProviderTests {
 		when(tool1.name()).thenReturn("tool1");
 
 		Tool tool2 = mock(Tool.class);
+		when(tool2.name()).thenReturn("tool2");
 
 		McpSyncClient mcpClient1 = mock(McpSyncClient.class);
 		ListToolsResult listToolsResult1 = mock(ListToolsResult.class);
@@ -226,9 +227,15 @@ class SyncMcpToolCallbackProviderTests {
 		when(mcpClient2.getClientInfo()).thenReturn(clientInfo2);
 
 		// Create a filter that only accepts tools from client1
-		McpSyncClientBiPredicate clientFilter = (client, tool) -> client.getClientInfo().name().equals("testClient1");
+		McpSyncClientBiPredicate clientFilter1 = (client, tool) -> {
+			return client.getClientInfo().name().equals("testClient1") && tool.name().startsWith("tool2");
+		};
+		McpSyncClientBiPredicate clientFilter2 = (client, tool) -> {
+			return client.getClientInfo().name().equals("testClient2") && tool.name().startsWith("tool1");
+		};
 
-		SyncMcpToolCallbackProvider provider = new SyncMcpToolCallbackProvider(clientFilter, mcpClient1, mcpClient2);
+		SyncMcpToolCallbackProvider provider = new SyncMcpToolCallbackProvider(List.of(clientFilter1, clientFilter2),
+				mcpClient1, mcpClient2);
 
 		var callbacks = provider.getToolCallbacks();
 

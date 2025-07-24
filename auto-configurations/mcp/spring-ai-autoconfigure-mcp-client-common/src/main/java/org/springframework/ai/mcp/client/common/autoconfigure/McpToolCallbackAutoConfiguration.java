@@ -16,6 +16,7 @@
 
 package org.springframework.ai.mcp.client.common.autoconfigure;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.BiPredicate;
 
@@ -50,27 +51,30 @@ public class McpToolCallbackAutoConfiguration {
 	 * <p>
 	 * These callbacks enable integration with Spring AI's tool execution framework,
 	 * allowing MCP tools to be used as part of AI interactions.
+	 * @param syncClientsToolFilters list of {@link McpSyncClientBiPredicate}s for the
+	 * sync client to filter the discovered tools
 	 * @param syncMcpClients provider of MCP sync clients
 	 * @return list of tool callbacks for MCP integration
 	 */
 	@Bean
 	@ConditionalOnProperty(prefix = McpClientCommonProperties.CONFIG_PREFIX, name = "type", havingValue = "SYNC",
 			matchIfMissing = true)
-	public SyncMcpToolCallbackProvider mcpToolCallbacks(ObjectProvider<McpSyncClientBiPredicate> syncClientsToolFilter,
+	public SyncMcpToolCallbackProvider mcpToolCallbacks(
+			ObjectProvider<List<McpSyncClientBiPredicate>> syncClientsToolFilters,
 			ObjectProvider<List<McpSyncClient>> syncMcpClients) {
+		List<McpSyncClientBiPredicate> toolFilters = syncClientsToolFilters.getIfAvailable(List::of);
 		List<McpSyncClient> mcpClients = syncMcpClients.stream().flatMap(List::stream).toList();
-		return new SyncMcpToolCallbackProvider(syncClientsToolFilter.getIfUnique((() -> (McpSyncClient, tool) -> true)),
-				mcpClients);
+		return new SyncMcpToolCallbackProvider(toolFilters, mcpClients);
 	}
 
 	@Bean
 	@ConditionalOnProperty(prefix = McpClientCommonProperties.CONFIG_PREFIX, name = "type", havingValue = "ASYNC")
 	public AsyncMcpToolCallbackProvider mcpAsyncToolCallbacks(
-			ObjectProvider<McpAsyncClientBiPredicate> asyncClientsToolFilter,
+			ObjectProvider<List<McpAsyncClientBiPredicate>> asyncClientsToolFilter,
 			ObjectProvider<List<McpAsyncClient>> mcpClientsProvider) {
+		List<McpAsyncClientBiPredicate> toolFilters = asyncClientsToolFilter.getIfAvailable(List::of);
 		List<McpAsyncClient> mcpClients = mcpClientsProvider.stream().flatMap(List::stream).toList();
-		return new AsyncMcpToolCallbackProvider(
-				asyncClientsToolFilter.getIfUnique(() -> (McpAsyncClient, tool) -> true), mcpClients);
+		return new AsyncMcpToolCallbackProvider(toolFilters, mcpClients);
 	}
 
 	public static class McpToolCallbackAutoConfigurationCondition extends AllNestedConditions {

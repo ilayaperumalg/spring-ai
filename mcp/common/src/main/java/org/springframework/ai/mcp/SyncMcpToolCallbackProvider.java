@@ -16,6 +16,7 @@
 
 package org.springframework.ai.mcp;
 
+import java.util.Arrays;
 import java.util.List;
 
 import io.modelcontextprotocol.client.McpSyncClient;
@@ -60,6 +61,7 @@ import org.springframework.util.CollectionUtils;
  * }</pre>
  *
  * @author Christian Tzolov
+ * @author Ilayaperumal Gopinathan
  * @see ToolCallbackProvider
  * @see SyncMcpToolCallback
  * @see McpSyncClient
@@ -70,19 +72,32 @@ public class SyncMcpToolCallbackProvider implements ToolCallbackProvider {
 
 	private final List<McpSyncClient> mcpClients;
 
-	private final McpSyncClientBiPredicate toolFilter;
+	private final List<McpSyncClientBiPredicate> toolFilters;
 
 	/**
 	 * Creates a new {@code SyncMcpToolCallbackProvider} instance with a list of MCP
 	 * clients.
-	 * @param mcpClients the list of MCP clients to use for discovering tools
 	 * @param toolFilter a filter to apply to each discovered tool
+	 * @param mcpClients the list of MCP clients to use for discovering tools
 	 */
 	public SyncMcpToolCallbackProvider(McpSyncClientBiPredicate toolFilter, List<McpSyncClient> mcpClients) {
-		Assert.notNull(mcpClients, "MCP clients must not be null");
 		Assert.notNull(toolFilter, "Tool filter must not be null");
+		Assert.notNull(mcpClients, "MCP clients must not be null");
+		this.toolFilters = List.of(toolFilter);
 		this.mcpClients = mcpClients;
-		this.toolFilter = toolFilter;
+	}
+
+	/**
+	 * Creates a new {@code SyncMcpToolCallbackProvider} instance with a list of MCP
+	 * clients.
+	 * @param toolFilters a filter to apply to each discovered tool
+	 * @param mcpClients the list of MCP clients to use for discovering tools
+	 */
+	public SyncMcpToolCallbackProvider(List<McpSyncClientBiPredicate> toolFilters, List<McpSyncClient> mcpClients) {
+		Assert.notNull(toolFilters, "Tool filters must not be null");
+		Assert.notNull(mcpClients, "MCP clients must not be null");
+		this.toolFilters = toolFilters;
+		this.mcpClients = mcpClients;
 	}
 
 	/**
@@ -92,6 +107,16 @@ public class SyncMcpToolCallbackProvider implements ToolCallbackProvider {
 	 */
 	public SyncMcpToolCallbackProvider(List<McpSyncClient> mcpClients) {
 		this((mcpClient, tool) -> true, mcpClients);
+	}
+
+	/**
+	 * Creates a new {@code SyncMcpToolCallbackProvider} instance with one or more MCP
+	 * clients.
+	 * @param toolFilters a list of filters to apply to each discovered tool
+	 * @param mcpClients the MCP clients to use for discovering tools
+	 */
+	public SyncMcpToolCallbackProvider(List<McpSyncClientBiPredicate> toolFilters, McpSyncClient... mcpClients) {
+		this(toolFilters, List.of(mcpClients));
 	}
 
 	/**
@@ -131,7 +156,7 @@ public class SyncMcpToolCallbackProvider implements ToolCallbackProvider {
 			.flatMap(mcpClient -> mcpClient.listTools()
 				.tools()
 				.stream()
-				.filter(tool -> this.toolFilter.test(mcpClient, tool))
+				.filter(tool -> this.toolFilters.stream().allMatch(filter -> filter.test(mcpClient, tool)))
 				.map(tool -> new SyncMcpToolCallback(mcpClient, tool)))
 			.toArray(ToolCallback[]::new);
 		validateToolCallbacks(array);

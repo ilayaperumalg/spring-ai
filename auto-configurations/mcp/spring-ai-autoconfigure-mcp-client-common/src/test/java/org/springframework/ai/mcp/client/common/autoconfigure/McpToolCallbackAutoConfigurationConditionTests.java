@@ -92,14 +92,19 @@ public class McpToolCallbackAutoConfigurationConditionTests {
 			.withUserConfiguration(McpToolCallbackAutoConfiguration.class, McpSyncClientFilterConfiguration.class)
 			.withPropertyValues("spring.ai.mcp.client.type=SYNC")
 			.run(context -> {
-				assertThat(context).hasBean("syncClientFilter");
+				assertThat(context).hasBean("syncClientFilter1");
+				assertThat(context).hasBean("syncClientFilter2");
 				SyncMcpToolCallbackProvider toolCallbackProvider = context.getBean(SyncMcpToolCallbackProvider.class);
-				Field field = SyncMcpToolCallbackProvider.class.getDeclaredField("toolFilter");
+				Field field = SyncMcpToolCallbackProvider.class.getDeclaredField("toolFilters");
 				field.setAccessible(true);
-				McpSyncClientBiPredicate toolFilter = (McpSyncClientBiPredicate) field.get(toolCallbackProvider);
+				List<McpSyncClientBiPredicate> toolFilters = (List<McpSyncClientBiPredicate>) field
+					.get(toolCallbackProvider);
 				McpSyncClient syncClient1 = mock(McpSyncClient.class);
+				McpSyncClient syncClient2 = mock(McpSyncClient.class);
 				var clientInfo1 = new McpSchema.Implementation("client1", "1.0.0");
+				var clientInfo2 = new McpSchema.Implementation("client2", "1.0.0");
 				when(syncClient1.getClientInfo()).thenReturn(clientInfo1);
+				when(syncClient2.getClientInfo()).thenReturn(clientInfo2);
 				McpSchema.Tool tool1 = mock(McpSchema.Tool.class);
 				when(tool1.name()).thenReturn("tool1");
 				McpSchema.Tool tool2 = mock(McpSchema.Tool.class);
@@ -107,25 +112,32 @@ public class McpToolCallbackAutoConfigurationConditionTests {
 				McpSchema.ListToolsResult listToolsResult1 = mock(McpSchema.ListToolsResult.class);
 				when(listToolsResult1.tools()).thenReturn(List.of(tool1, tool2));
 				when(syncClient1.listTools()).thenReturn(listToolsResult1);
-				assertThat(toolFilter.test(syncClient1, tool1)).isFalse();
-				assertThat(toolFilter.test(syncClient1, tool2)).isTrue();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(syncClient1, tool1))).isTrue();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(syncClient2, tool1))).isFalse();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(syncClient1, tool2))).isFalse();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(syncClient2, tool2))).isTrue();
 			});
 	}
 
 	@Test
-	void verifyASyncToolCallbackFilterConfiguration() {
+	void verifyAsyncToolCallbackFilterConfiguration() {
 		this.contextRunner
 			.withUserConfiguration(McpToolCallbackAutoConfiguration.class, McpAsyncClientFilterConfiguration.class)
 			.withPropertyValues("spring.ai.mcp.client.type=ASYNC")
 			.run(context -> {
-				assertThat(context).hasBean("asyncClientFilter");
+				assertThat(context).hasBean("asyncClientFilter1");
+				assertThat(context).hasBean("asyncClientFilter2");
 				AsyncMcpToolCallbackProvider toolCallbackProvider = context.getBean(AsyncMcpToolCallbackProvider.class);
-				Field field = AsyncMcpToolCallbackProvider.class.getDeclaredField("toolFilter");
+				Field field = AsyncMcpToolCallbackProvider.class.getDeclaredField("toolFilters");
 				field.setAccessible(true);
-				McpAsyncClientBiPredicate toolFilter = (McpAsyncClientBiPredicate) field.get(toolCallbackProvider);
+				List<McpAsyncClientBiPredicate> toolFilters = (List<McpAsyncClientBiPredicate>) field
+					.get(toolCallbackProvider);
 				McpAsyncClient asyncClient1 = mock(McpAsyncClient.class);
 				var clientInfo1 = new McpSchema.Implementation("client1", "1.0.0");
 				when(asyncClient1.getClientInfo()).thenReturn(clientInfo1);
+				McpAsyncClient asyncClient2 = mock(McpAsyncClient.class);
+				var clientInfo2 = new McpSchema.Implementation("client2", "1.0.0");
+				when(asyncClient2.getClientInfo()).thenReturn(clientInfo2);
 				McpSchema.Tool tool1 = mock(McpSchema.Tool.class);
 				when(tool1.name()).thenReturn("tool1");
 				McpSchema.Tool tool2 = mock(McpSchema.Tool.class);
@@ -133,8 +145,10 @@ public class McpToolCallbackAutoConfigurationConditionTests {
 				McpSchema.ListToolsResult listToolsResult1 = mock(McpSchema.ListToolsResult.class);
 				when(listToolsResult1.tools()).thenReturn(List.of(tool1, tool2));
 				when(asyncClient1.listTools()).thenReturn(Mono.just(listToolsResult1));
-				assertThat(toolFilter.test(asyncClient1, tool1)).isFalse();
-				assertThat(toolFilter.test(asyncClient1, tool2)).isTrue();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(asyncClient1, tool1))).isTrue();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(asyncClient2, tool1))).isFalse();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(asyncClient1, tool2))).isFalse();
+				assertThat(toolFilters.stream().allMatch(filter -> filter.test(asyncClient2, tool2))).isTrue();
 			});
 	}
 
@@ -153,11 +167,24 @@ public class McpToolCallbackAutoConfigurationConditionTests {
 	static class McpSyncClientFilterConfiguration {
 
 		@Bean
-		McpSyncClientBiPredicate syncClientFilter() {
+		McpSyncClientBiPredicate syncClientFilter1() {
 			return new McpSyncClientBiPredicate() {
 				@Override
 				public boolean test(McpSyncClient mcpSyncClient, McpSchema.Tool tool) {
-					if (mcpSyncClient.getClientInfo().name().equals("client1") && tool.name().contains("tool1")) {
+					if (mcpSyncClient.getClientInfo().name().equals("client1") && tool.name().contains("tool2")) {
+						return false;
+					}
+					return true;
+				}
+			};
+		}
+
+		@Bean
+		McpSyncClientBiPredicate syncClientFilter2() {
+			return new McpSyncClientBiPredicate() {
+				@Override
+				public boolean test(McpSyncClient mcpSyncClient, McpSchema.Tool tool) {
+					if (mcpSyncClient.getClientInfo().name().equals("client2") && tool.name().contains("tool1")) {
 						return false;
 					}
 					return true;
@@ -171,11 +198,24 @@ public class McpToolCallbackAutoConfigurationConditionTests {
 	static class McpAsyncClientFilterConfiguration {
 
 		@Bean
-		McpAsyncClientBiPredicate asyncClientFilter() {
+		McpAsyncClientBiPredicate asyncClientFilter1() {
 			return new McpAsyncClientBiPredicate() {
 				@Override
 				public boolean test(McpAsyncClient mcpAsyncClient, McpSchema.Tool tool) {
-					if (mcpAsyncClient.getClientInfo().name().equals("client1") && tool.name().contains("tool1")) {
+					if (mcpAsyncClient.getClientInfo().name().equals("client1") && tool.name().contains("tool2")) {
+						return false;
+					}
+					return true;
+				}
+			};
+		}
+
+		@Bean
+		McpAsyncClientBiPredicate asyncClientFilter2() {
+			return new McpAsyncClientBiPredicate() {
+				@Override
+				public boolean test(McpAsyncClient mcpAsyncClient, McpSchema.Tool tool) {
+					if (mcpAsyncClient.getClientInfo().name().equals("client2") && tool.name().contains("tool1")) {
 						return false;
 					}
 					return true;
