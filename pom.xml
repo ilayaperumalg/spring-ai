@@ -234,6 +234,8 @@
 
 		<module>mcp/common</module>
 		<module>mcp/mcp-annotations-spring</module>
+
+		<module>spring-ai-a2a</module>
 	</modules>
 
 	<organization>
