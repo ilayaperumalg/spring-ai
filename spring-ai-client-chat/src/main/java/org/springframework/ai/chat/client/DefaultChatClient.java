@@ -660,7 +660,10 @@ public class DefaultChatClient implements ChatClient {
 
 		private @Nullable String systemText;
 
+		@Deprecated
 		private @Nullable ChatOptions chatOptions;
+
+		private ChatOptions.@Nullable Builder<?> optionsCustomizer;
 
 		/* copy constructor */
 		DefaultChatClientRequestSpec(DefaultChatClientRequestSpec ccr) {
@@ -786,6 +789,14 @@ public class DefaultChatClient implements ChatClient {
 			return this.templateRenderer;
 		}
 
+		/* package */ ChatModel getChatModel() {
+			return this.chatModel;
+		}
+
+		/* package */ ChatOptions.@Nullable Builder<?> getOptionsCustomizer() {
+			return this.optionsCustomizer;
+		}
+
 		/**
 		 * Return a {@link ChatClient.Builder} to create a new {@link ChatClient} whose
 		 * settings are replicated from this {@link ChatClientRequest}.
@@ -872,6 +883,13 @@ public class DefaultChatClient implements ChatClient {
 		public <T extends ChatOptions> ChatClientRequestSpec options(T options) {
 			Assert.notNull(options, "options cannot be null");
 			this.chatOptions = options;
+			return this;
+		}
+
+		@Override
+		public <B extends ChatOptions.Builder<?>> ChatClientRequestSpec options(B customizer) {
+			Assert.notNull(customizer, "customizer cannot be null");
+			this.optionsCustomizer = customizer;
 			return this;
 		}
 

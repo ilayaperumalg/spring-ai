@@ -208,7 +208,10 @@ public interface ChatClient {
 
 		ChatClientRequestSpec messages(List<Message> messages);
 
+		@Deprecated
 		<T extends ChatOptions> ChatClientRequestSpec options(T options);
+
+		<B extends ChatOptions.Builder<?>> ChatClientRequestSpec options(B customizer);
 
 		ChatClientRequestSpec toolNames(String... toolNames);
 
