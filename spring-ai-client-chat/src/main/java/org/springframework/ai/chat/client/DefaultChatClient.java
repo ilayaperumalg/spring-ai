@@ -113,11 +113,6 @@ public class DefaultChatClient implements ChatClient {
 
 		DefaultChatClientRequestSpec spec = new DefaultChatClientRequestSpec(this.defaultChatClientRequest);
 
-		// Options
-		if (prompt.getOptions() != null) {
-			spec.options(prompt.getOptions());
-		}
-
 		// Messages
 		if (prompt.getInstructions() != null) {
 			spec.messages(prompt.getInstructions());
@@ -660,16 +655,13 @@ public class DefaultChatClient implements ChatClient {
 
 		private @Nullable String systemText;
 
-		@Deprecated
-		private @Nullable ChatOptions chatOptions;
-
 		private ChatOptions.@Nullable Builder<?> optionsCustomizer;
 
 		/* copy constructor */
 		DefaultChatClientRequestSpec(DefaultChatClientRequestSpec ccr) {
 			this(ccr.chatModel, ccr.userText, ccr.userParams, ccr.userMetadata, ccr.systemText, ccr.systemParams,
 					ccr.systemMetadata, ccr.toolCallbacks, ccr.toolCallbackProviders, ccr.messages, ccr.toolNames,
-					ccr.media, ccr.chatOptions, ccr.advisors, ccr.advisorParams, ccr.observationRegistry,
+					ccr.media, ccr.optionsCustomizer, ccr.advisors, ccr.advisorParams, ccr.observationRegistry,
 					ccr.chatClientObservationConvention, ccr.toolContext, ccr.templateRenderer,
 					ccr.advisorObservationConvention);
 		}
@@ -678,7 +670,7 @@ public class DefaultChatClient implements ChatClient {
 				Map<String, Object> userParams, Map<String, Object> userMetadata, @Nullable String systemText,
 				Map<String, Object> systemParams, Map<String, Object> systemMetadata, List<ToolCallback> toolCallbacks,
 				List<ToolCallbackProvider> toolCallbackProviders, List<Message> messages, List<String> toolNames,
-				List<Media> media, @Nullable ChatOptions chatOptions, List<Advisor> advisors,
+				List<Media> media, ChatOptions.@Nullable Builder<?> customizer, List<Advisor> advisors,
 				Map<String, Object> advisorParams, ObservationRegistry observationRegistry,
 				@Nullable ChatClientObservationConvention chatClientObservationConvention,
 				Map<String, Object> toolContext, @Nullable TemplateRenderer templateRenderer,
@@ -699,8 +691,7 @@ public class DefaultChatClient implements ChatClient {
 			Assert.notNull(toolContext, "toolContext cannot be null");
 
 			this.chatModel = chatModel;
-			this.chatOptions = chatOptions != null ? chatOptions.copy()
-					: (chatModel.getDefaultOptions() != null) ? chatModel.getDefaultOptions().copy() : null;
+			this.optionsCustomizer = customizer != null ? customizer.clone() : null;
 
 			this.userText = userText;
 			this.userParams.putAll(userParams);
@@ -747,10 +738,6 @@ public class DefaultChatClient implements ChatClient {
 
 		public Map<String, Object> getSystemMetadata() {
 			return this.systemMetadata;
-		}
-
-		public @Nullable ChatOptions getChatOptions() {
-			return this.chatOptions;
 		}
 
 		public List<Advisor> getAdvisors() {
@@ -829,8 +816,8 @@ public class DefaultChatClient implements ChatClient {
 				builder.defaultSystem(s -> s.text(text).params(this.systemParams).metadata(this.systemMetadata));
 			}
 
-			if (this.chatOptions != null) {
-				builder.defaultOptions(this.chatOptions);
+			if (this.optionsCustomizer != null) {
+				builder.defaultOptions(this.optionsCustomizer);
 			}
 
 			builder.addMessages(this.messages);
@@ -877,12 +864,6 @@ public class DefaultChatClient implements ChatClient {
 			Assert.notNull(messages, "messages cannot be null");
 			Assert.noNullElements(messages, "messages cannot contain null elements");
 			this.messages.addAll(messages);
-			return this;
-		}
-
-		public <T extends ChatOptions> ChatClientRequestSpec options(T options) {
-			Assert.notNull(options, "options cannot be null");
-			this.chatOptions = options;
 			return this;
 		}
 

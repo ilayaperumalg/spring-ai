@@ -22,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import net.javacrumbs.jsonunit.assertj.JsonAssertions;
 import net.javacrumbs.jsonunit.core.Option;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -38,7 +39,6 @@ import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.StructuredOutputChatOptions;
 
@@ -88,9 +88,19 @@ public class ChatClientNativeStructuredResponseTests {
 	@Captor
 	ArgumentCaptor<Prompt> promptCaptor;
 
+	@BeforeEach
+	void setupModelDefaultOptionsMocks() {
+		StructuredOutputChatOptions defaults = mock(StructuredOutputChatOptions.class);
+		when(this.chatModel.getDefaultOptions()).thenReturn(defaults);
+
+		StructuredOutputChatOptions.Builder builder = mock(StructuredOutputChatOptions.Builder.class);
+		when(defaults.mutate()).thenReturn(builder);
+
+		when(builder.build()).thenReturn(this.structuredOutputChatOptions);
+	}
+
 	@Test
 	public void fallBackResponseEntityTest() {
-		when(this.chatModel.getDefaultOptions()).thenReturn(ChatOptions.builder().build());
 
 		ChatResponseMetadata metadata = ChatResponseMetadata.builder().keyValue("key1", "value1").build();
 
@@ -104,7 +114,6 @@ public class ChatClientNativeStructuredResponseTests {
 		ResponseEntity<ChatResponse, UserEntity> responseEntity = ChatClient.builder(this.chatModel)
 			.build()
 			.prompt()
-			.options(this.structuredOutputChatOptions)
 			.advisors(textCallAdvisor)
 			.user("Tell me about John")
 			.call()
@@ -130,8 +139,6 @@ public class ChatClientNativeStructuredResponseTests {
 	@Test
 	public void fallBackEntityTest() {
 
-		when(this.chatModel.getDefaultOptions()).thenReturn(ChatOptions.builder().build());
-
 		ChatResponseMetadata metadata = ChatResponseMetadata.builder().keyValue("key1", "value1").build();
 
 		var chatResponse = new ChatResponse(List.of(new Generation(new AssistantMessage("""
@@ -139,12 +146,12 @@ public class ChatClientNativeStructuredResponseTests {
 				"""))), metadata);
 
 		given(this.chatModel.call(this.promptCaptor.capture())).willReturn(chatResponse);
+		given(this.structuredOutputChatOptions.copy()).willReturn(this.structuredOutputChatOptions);
 
 		var textCallAdvisor = new ContextCatcherCallAdvisor();
 		UserEntity entity = ChatClient.builder(this.chatModel)
 			.build()
 			.prompt()
-			.options(this.structuredOutputChatOptions)
 			.advisors(textCallAdvisor)
 			.user("Tell me about John")
 			.call()
@@ -166,10 +173,6 @@ public class ChatClientNativeStructuredResponseTests {
 
 	@Test
 	public void nativeResponseEntityTest(@Captor ArgumentCaptor<String> outputSchemaCaptor) {
-		ChatOptions.Builder builder = mock(ChatOptions.Builder.class);
-		when(this.chatModel.getDefaultOptions()).thenReturn(this.structuredOutputChatOptions);
-		when(this.structuredOutputChatOptions.mutate()).thenReturn(builder);
-		when(builder.build()).thenReturn(this.structuredOutputChatOptions);
 
 		ChatResponseMetadata metadata = ChatResponseMetadata.builder().keyValue("key1", "value1").build();
 
@@ -185,7 +188,6 @@ public class ChatClientNativeStructuredResponseTests {
 		ResponseEntity<ChatResponse, UserEntity> responseEntity = ChatClient.builder(this.chatModel)
 			.build()
 			.prompt()
-			.options(this.structuredOutputChatOptions)
 			.advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
 			.advisors(textCallAdvisor)
 			.user("Tell me about John")
@@ -222,10 +224,6 @@ public class ChatClientNativeStructuredResponseTests {
 				"""))), metadata);
 
 		given(this.chatModel.call(this.promptCaptor.capture())).willReturn(chatResponse);
-		ChatOptions.Builder builder = mock(ChatOptions.Builder.class);
-		when(this.chatModel.getDefaultOptions()).thenReturn(this.structuredOutputChatOptions);
-		when(this.structuredOutputChatOptions.mutate()).thenReturn(builder);
-		when(builder.build()).thenReturn(this.structuredOutputChatOptions);
 		willDoNothing().given(this.structuredOutputChatOptions).setOutputSchema(outputSchemaCaptor.capture());
 
 		var textCallAdvisor = new ContextCatcherCallAdvisor();
@@ -233,7 +231,6 @@ public class ChatClientNativeStructuredResponseTests {
 		UserEntity entity = ChatClient.builder(this.chatModel)
 			.build()
 			.prompt()
-			.options(this.structuredOutputChatOptions)
 			.advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
 			.advisors(textCallAdvisor)
 			.user("Tell me about John")
@@ -260,8 +257,6 @@ public class ChatClientNativeStructuredResponseTests {
 	@Test
 	public void dynamicDisableNativeResponseEntityTest() {
 
-		when(this.chatModel.getDefaultOptions()).thenReturn(ChatOptions.builder().build());
-
 		ChatResponseMetadata metadata = ChatResponseMetadata.builder().keyValue("key1", "value1").build();
 
 		var chatResponse = new ChatResponse(List.of(new Generation(new AssistantMessage("""
@@ -269,13 +264,13 @@ public class ChatClientNativeStructuredResponseTests {
 				"""))), metadata);
 
 		given(this.chatModel.call(this.promptCaptor.capture())).willReturn(chatResponse);
+		given(this.structuredOutputChatOptions.copy()).willReturn(this.structuredOutputChatOptions);
 
 		var textCallAdvisor = new ContextCatcherCallAdvisor();
 
 		ResponseEntity<ChatResponse, UserEntity> responseEntity = ChatClient.builder(this.chatModel)
 			.build()
 			.prompt()
-			.options(this.structuredOutputChatOptions)
 			.advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
 			.advisors(textCallAdvisor)
 			.advisors(a -> a.param(ChatClientAttributes.STRUCTURED_OUTPUT_NATIVE.getKey(), false))
@@ -303,8 +298,6 @@ public class ChatClientNativeStructuredResponseTests {
 	@Test
 	public void dynamicDisableNativeEntityTest() {
 
-		when(this.chatModel.getDefaultOptions()).thenReturn(ChatOptions.builder().build());
-
 		ChatResponseMetadata metadata = ChatResponseMetadata.builder().keyValue("key1", "value1").build();
 
 		var chatResponse = new ChatResponse(List.of(new Generation(new AssistantMessage("""
@@ -312,13 +305,13 @@ public class ChatClientNativeStructuredResponseTests {
 				"""))), metadata);
 
 		given(this.chatModel.call(this.promptCaptor.capture())).willReturn(chatResponse);
+		given(this.structuredOutputChatOptions.copy()).willReturn(this.structuredOutputChatOptions);
 
 		var textCallAdvisor = new ContextCatcherCallAdvisor();
 
 		UserEntity entity = ChatClient.builder(this.chatModel)
 			.build()
 			.prompt()
-			.options(this.structuredOutputChatOptions)
 			.advisors(AdvisorParams.ENABLE_NATIVE_STRUCTURED_OUTPUT)
 			.advisors(textCallAdvisor)
 			.advisors(a -> a.param(ChatClientAttributes.STRUCTURED_OUTPUT_NATIVE.getKey(), false))

@@ -127,18 +127,7 @@ class DefaultChatClientTests {
 		assertThat(spec.getMessages()).hasSize(2);
 		assertThat(spec.getMessages().get(0).getText()).isEqualTo("instructions");
 		assertThat(spec.getMessages().get(1).getText()).isEqualTo("my question");
-		assertThat(spec.getChatOptions()).isNull();
-	}
-
-	@Test
-	void whenPromptWithOptionsThenReturn() {
-		ChatClient chatClient = new DefaultChatClientBuilder(mockChatModel()).build();
-		ChatOptions chatOptions = ChatOptions.builder().build();
-		Prompt prompt = new Prompt(List.of(), chatOptions);
-		DefaultChatClient.DefaultChatClientRequestSpec spec = (DefaultChatClient.DefaultChatClientRequestSpec) chatClient
-			.prompt(prompt);
-		assertThat(spec.getMessages()).isEmpty();
-		assertThat(spec.getChatOptions()).isEqualTo(chatOptions);
+		assertThat(spec.getOptionsCustomizer()).isNull();
 	}
 
 	@Test
@@ -147,9 +136,9 @@ class DefaultChatClientTests {
 		var toolCallback = mock(ToolCallback.class);
 		var advisor = mock(Advisor.class);
 		var templateRenderer = mock(TemplateRenderer.class);
-		var chatOptions = mock(ChatOptions.class);
-		var copyChatOptions = mock(ChatOptions.class);
-		when(chatOptions.copy()).thenReturn(copyChatOptions);
+		var chatOptions = mock(ChatOptions.Builder.class);
+		var copyChatOptions = mock(ChatOptions.Builder.class);
+		when(chatOptions.clone()).thenReturn(copyChatOptions);
 		var toolContext = new HashMap<String, Object>();
 		var userMessage1 = mock(UserMessage.class);
 		var userMessage2 = mock(UserMessage.class);
@@ -177,7 +166,7 @@ class DefaultChatClientTests {
 
 		assertThat(mutateSpec.getMessages()).hasSize(2).containsOnly(userMessage1, userMessage2);
 		assertThat(mutateSpec.getAdvisors()).hasSize(1).containsOnly(advisor);
-		assertThat(mutateSpec.getChatOptions()).isEqualTo(copyChatOptions);
+		assertThat(mutateSpec.getOptionsCustomizer()).isEqualTo(copyChatOptions);
 		assertThat(mutateSpec.getUserText()).isEqualTo("original user {userParams}");
 		assertThat(mutateSpec.getUserParams()).containsEntry("userParams", "user value2");
 		assertThat(mutateSpec.getUserMetadata()).containsEntry("userMetadata", "user data3");
@@ -1694,18 +1683,18 @@ class DefaultChatClientTests {
 	void whenOptionsIsNullThenThrow() {
 		ChatClient chatClient = new DefaultChatClientBuilder(mockChatModel()).build();
 		ChatClient.ChatClientRequestSpec spec = chatClient.prompt();
-		assertThatThrownBy(() -> spec.options((ChatOptions) null)).isInstanceOf(IllegalArgumentException.class)
-			.hasMessage("options cannot be null");
+		assertThatThrownBy(() -> spec.options(null)).isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("customizer cannot be null");
 	}
 
 	@Test
 	void whenOptionsThenReturn() {
 		ChatClient chatClient = new DefaultChatClientBuilder(mockChatModel()).build();
 		ChatClient.ChatClientRequestSpec spec = chatClient.prompt();
-		ChatOptions options = ChatOptions.builder().build();
-		spec = spec.options(options);
+		var optionsCustomizer = ChatOptions.builder();
+		spec = spec.options(optionsCustomizer);
 		DefaultChatClient.DefaultChatClientRequestSpec defaultSpec = (DefaultChatClient.DefaultChatClientRequestSpec) spec;
-		assertThat(defaultSpec.getChatOptions()).isEqualTo(options);
+		assertThat(defaultSpec.getOptionsCustomizer()).isEqualTo(optionsCustomizer);
 	}
 
 	@Test
@@ -2195,7 +2184,7 @@ class DefaultChatClientTests {
 	@Test
 	void whenPromptWithSystemUserAndOptionsThenReturn() {
 		ChatClient chatClient = new DefaultChatClientBuilder(mockChatModel()).build();
-		ChatOptions options = ChatOptions.builder().build();
+		var options = ChatOptions.builder();
 
 		DefaultChatClient.DefaultChatClientRequestSpec spec = (DefaultChatClient.DefaultChatClientRequestSpec) chatClient
 			.prompt()
@@ -2205,7 +2194,7 @@ class DefaultChatClientTests {
 
 		assertThat(spec.getSystemText()).isEqualTo("instructions");
 		assertThat(spec.getUserText()).isEqualTo("question");
-		assertThat(spec.getChatOptions()).isEqualTo(options);
+		assertThat(spec.getOptionsCustomizer()).isEqualTo(options);
 	}
 
 	@Test
