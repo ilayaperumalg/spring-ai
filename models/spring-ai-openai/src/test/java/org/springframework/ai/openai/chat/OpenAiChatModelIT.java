@@ -765,7 +765,7 @@ public class OpenAiChatModelIT extends AbstractIT {
 		String model = OpenAiApi.ChatModel.GPT_3_5_TURBO.getName();
 		// @formatter:off
 		ChatResponse response = ChatClient.create(this.chatModel).prompt()
-				.options(OpenAiChatOptions.builder().model(model).build())
+				.options(OpenAiChatOptions.builder().model(model))
 				.user("Tell me about 3 famous pirates from the Golden Age of Piracy and what they did")
 				.call()
 				.chatResponse();

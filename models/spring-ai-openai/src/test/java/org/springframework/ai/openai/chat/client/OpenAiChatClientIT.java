@@ -86,7 +86,7 @@ class OpenAiChatClientIT extends AbstractIT {
 		// @formatter:off
 		ChatClient chatClient = ChatClient.builder(this.chatModel)
 			.defaultOptions(OpenAiChatOptions.builder()
-				.model(OpenAiApi.ChatModel.GPT_4_O.getValue()).build())
+				.model(OpenAiApi.ChatModel.GPT_4_O.getValue()))
 			.defaultUser(REASON_QUESTION)
 			.build();
 
@@ -250,7 +250,7 @@ class OpenAiChatClientIT extends AbstractIT {
 		// @formatter:off
 		Flux<ChatResponse> chatResponse = ChatClient.create(this.chatModel)
 				.prompt()
-				.options(OpenAiChatOptions.builder().streamUsage(true).build())
+				.options(OpenAiChatOptions.builder().streamUsage(true))
 				.advisors(new SimpleLoggerAdvisor())
 				.user(u -> u
 						.text("Generate the filmography of 5 movies for Tom Hanks. " + System.lineSeparator()
@@ -351,7 +351,7 @@ class OpenAiChatClientIT extends AbstractIT {
 
 		// @formatter:off
 		String response = ChatClient.create(this.chatModel).prompt()
-				.options(OpenAiChatOptions.builder().model(modelName).build())
+				.options(OpenAiChatOptions.builder().model(modelName))
 				.user(u -> u.text("Explain what do you see on this picture?")
 						.media(MimeTypeUtils.IMAGE_PNG, new ClassPathResource("/test.png")))
 				.call()
@@ -372,7 +372,7 @@ class OpenAiChatClientIT extends AbstractIT {
 		// @formatter:off
 		String response = ChatClient.create(this.chatModel).prompt()
 				// TODO consider adding model(...) method to ChatClient as a shortcut to
-				.options(OpenAiChatOptions.builder().model(modelName).build())
+				.options(OpenAiChatOptions.builder().model(modelName))
 				.user(u -> u.text("Explain what do you see on this picture?").media(MimeTypeUtils.IMAGE_PNG, url))
 				.call()
 				.content();
@@ -391,7 +391,7 @@ class OpenAiChatClientIT extends AbstractIT {
 		// @formatter:off
 		Flux<String> response = ChatClient.create(this.chatModel).prompt()
 				.options(OpenAiChatOptions.builder().model(OpenAiApi.ChatModel.GPT_4_O.getValue())
-						.build())
+						)
 				.user(u -> u.text("Explain what do you see on this picture?")
 						.media(MimeTypeUtils.IMAGE_PNG, url))
 				.stream()
@@ -475,7 +475,7 @@ class OpenAiChatClientIT extends AbstractIT {
 		// @formatter:off
 		Flux<ChatResponse> chatResponse = ChatClient.create(this.chatModel)
 				.prompt()
-				.options(OpenAiChatOptions.builder().streamUsage(true).build())
+				.options(OpenAiChatOptions.builder().streamUsage(true))
 				.user(u -> u
 						.text("Generate the filmography of 5 movies for Tom Hanks. " + System.lineSeparator()
 								+ "<format>")
@@ -511,7 +511,7 @@ class OpenAiChatClientIT extends AbstractIT {
 		// @formatter:off
 		Flux<ChatResponse> chatResponse = ChatClient.create(this.chatModel)
 				.prompt()
-				.options(OpenAiChatOptions.builder().streamUsage(true).build())
+				.options(OpenAiChatOptions.builder().streamUsage(true))
 				.advisors(new SimpleLoggerAdvisor())
 				.user(u -> u
 						.text("Generate the filmography of 5 movies for Tom Hanks. " + System.lineSeparator()

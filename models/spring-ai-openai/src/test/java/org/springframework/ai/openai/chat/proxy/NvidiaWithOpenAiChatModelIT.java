@@ -306,7 +306,7 @@ class NvidiaWithOpenAiChatModelIT {
 	void validateCallResponseMetadata() {
 		// @formatter:off
 		ChatResponse response = ChatClient.create(this.chatModel).prompt()
-				.options(OpenAiChatOptions.builder().model(DEFAULT_NVIDIA_MODEL).build())
+				.options(OpenAiChatOptions.builder().model(DEFAULT_NVIDIA_MODEL))
 				.user("Tell me about 3 famous pirates from the Golden Age of Piracy and what they did")
 				.call()
 				.chatResponse();

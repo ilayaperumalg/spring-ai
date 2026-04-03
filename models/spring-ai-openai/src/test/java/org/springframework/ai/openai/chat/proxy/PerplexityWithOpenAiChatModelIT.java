@@ -314,7 +314,7 @@ class PerplexityWithOpenAiChatModelIT {
 	void validateCallResponseMetadata() {
 		ChatResponse response = ChatClient.create(this.chatModel)
 			.prompt()
-			.options(OpenAiChatOptions.builder().model(DEFAULT_PERPLEXITY_MODEL).build())
+			.options(OpenAiChatOptions.builder().model(DEFAULT_PERPLEXITY_MODEL))
 			.user("Tell me about 3 famous pirates from the Golden Age of Piracy and what they did")
 			.call()
 			.chatResponse();
