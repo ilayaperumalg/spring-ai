@@ -644,8 +644,12 @@ public class GoogleGenAiChatOptions implements ToolCallingChatOptions, Structure
 		@Override
 		public B clone() {
 			B copy = super.clone();
-			copy.safetySettings = this.safetySettings == null ? null : new ArrayList<>(this.safetySettings);
-			copy.labels = this.labels == null ? null : new HashMap<>(this.labels);
+			if (!this.safetySettings.isEmpty()) {
+				copy.safetySettings = new ArrayList<>(this.safetySettings);
+			}
+			if (!this.labels.isEmpty()) {
+				copy.labels = new HashMap<>(this.labels);
+			}
 			return copy;
 		}
 

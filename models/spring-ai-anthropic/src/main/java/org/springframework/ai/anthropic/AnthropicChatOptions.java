@@ -639,9 +639,15 @@ public class AnthropicChatOptions extends AbstractAnthropicOptions
 		@Override
 		public B clone() {
 			AbstractBuilder<B> copy = super.clone();
-			copy.customHeaders = this.customHeaders == null ? null : new HashMap<>(this.customHeaders);
-			copy.citationDocuments = this.citationDocuments == null ? null : new ArrayList<>(this.citationDocuments);
-			copy.httpHeaders = this.httpHeaders == null ? null : new HashMap<>(this.httpHeaders);
+			if (!this.customHeaders.isEmpty()) {
+				copy.customHeaders = new HashMap<>(this.customHeaders);
+			}
+			if (!this.citationDocuments.isEmpty()) {
+				copy.citationDocuments = new ArrayList<>(this.citationDocuments);
+			}
+			if (!this.httpHeaders.isEmpty()) {
+				copy.httpHeaders = new HashMap<>(this.httpHeaders);
+			}
 			return (B) copy;
 		}
 

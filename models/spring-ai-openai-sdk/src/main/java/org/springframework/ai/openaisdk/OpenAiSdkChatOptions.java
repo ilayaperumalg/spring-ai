@@ -892,7 +892,9 @@ public class OpenAiSdkChatOptions extends AbstractOpenAiSdkOptions
 		@Override
 		public B clone() {
 			B copy = super.clone();
-			copy.customHeaders = this.customHeaders == null ? null : new HashMap<>(this.customHeaders);
+			if (!this.customHeaders.isEmpty()) {
+				copy.customHeaders = new HashMap<>(this.customHeaders);
+			}
 			copy.logitBias = this.logitBias == null ? null : new HashMap<>(this.logitBias);
 			copy.outputModalities = this.outputModalities == null ? null : new ArrayList<>(this.outputModalities);
 			copy.metadata = this.metadata == null ? null : new HashMap<>(this.metadata);
