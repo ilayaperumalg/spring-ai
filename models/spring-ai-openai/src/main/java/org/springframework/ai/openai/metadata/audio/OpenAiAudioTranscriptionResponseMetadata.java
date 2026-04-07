@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ public class OpenAiAudioTranscriptionResponseMetadata extends AudioTranscription
 
 	};
 
-	protected static final String AI_METADATA_STRING = "{ @type: %1$s, rateLimit: %4$s }";
+	protected static final String AI_METADATA_STRING = "{ @type: %1$s, rateLimit: %2$s }";
 
 	@Nullable
 	private RateLimit rateLimit;

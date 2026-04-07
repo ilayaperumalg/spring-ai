@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,18 +25,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.pgvector.PGvector;
 import org.postgresql.util.PGobject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.databind.json.JsonMapper;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
+import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.ai.observation.conventions.VectorStoreProvider;
 import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
 import org.springframework.ai.util.JacksonUtils;
@@ -153,6 +151,7 @@ import org.springframework.util.StringUtils;
  * @author Sebastien Deleuze
  * @author Jihoon Kim
  * @author YeongMin Song
+ * @author Jonghoon Park
  * @since 1.0.0
  */
 public class PgVectorStore extends AbstractObservationVectorStore implements InitializingBean {
@@ -175,7 +174,7 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 
 	private static final Logger logger = LoggerFactory.getLogger(PgVectorStore.class);
 
-	private static Map<PgDistanceType, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(
+	private static final Map<PgDistanceType, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(
 			PgDistanceType.COSINE_DISTANCE, VectorStoreSimilarityMetric.COSINE, PgDistanceType.EUCLIDEAN_DISTANCE,
 			VectorStoreSimilarityMetric.EUCLIDEAN, PgDistanceType.NEGATIVE_INNER_PRODUCT,
 			VectorStoreSimilarityMetric.DOT);
@@ -200,7 +199,9 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 
 	private final PgDistanceType distanceType;
 
-	private final ObjectMapper objectMapper;
+	private final JsonMapper jsonMapper;
+
+	private final DocumentRowMapper documentRowMapper;
 
 	private final boolean removeExistingVectorStoreTable;
 
@@ -218,7 +219,8 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 
 		Assert.notNull(builder.jdbcTemplate, "JdbcTemplate must not be null");
 
-		this.objectMapper = JsonMapper.builder().addModules(JacksonUtils.instantiateAvailableModules()).build();
+		this.jsonMapper = JsonMapper.builder().addModules(JacksonUtils.instantiateAvailableModules()).build();
+		this.documentRowMapper = new DocumentRowMapper(this.jsonMapper);
 
 		String vectorTable = builder.vectorTableName;
 		this.vectorTableName = vectorTable.isEmpty() ? DEFAULT_TABLE_NAME : vectorTable.trim();
@@ -252,7 +254,7 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 
 	@Override
 	public void doAdd(List<Document> documents) {
-		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptions.builder().build(),
 				this.batchingStrategy);
 
 		List<List<Document>> batchedDocuments = batchDocuments(documents);
@@ -301,12 +303,7 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 	}
 
 	private String toJson(Map<String, Object> map) {
-		try {
-			return this.objectMapper.writeValueAsString(map);
-		}
-		catch (JsonProcessingException e) {
-			throw new RuntimeException(e);
-		}
+		return this.jsonMapper.writeValueAsString(map);
 	}
 
 	private Object convertIdToPgType(String id) {
@@ -372,13 +369,13 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 		return this.jdbcTemplate.query(
 				String.format(this.getDistanceType().similaritySearchSqlTemplate, getFullyQualifiedTableName(),
 						jsonPathFilter),
-				new DocumentRowMapper(this.objectMapper), queryEmbedding, queryEmbedding, distance, request.getTopK());
+				this.documentRowMapper, queryEmbedding, queryEmbedding, distance, request.getTopK());
 	}
 
 	public List<Double> embeddingDistance(String query) {
 		return this.jdbcTemplate.query(
 				"SELECT embedding " + this.comparisonOperator() + " ? AS distance FROM " + getFullyQualifiedTableName(),
-				new RowMapper<Double>() {
+				new RowMapper<>() {
 
 					@Override
 					public Double mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -509,10 +506,8 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 	}
 
 	private String getSimilarityMetric() {
-		if (!SIMILARITY_TYPE_MAPPING.containsKey(this.getDistanceType())) {
-			return this.getDistanceType().name();
-		}
-		return SIMILARITY_TYPE_MAPPING.get(this.distanceType).value();
+		VectorStoreSimilarityMetric metric = SIMILARITY_TYPE_MAPPING.get(this.distanceType);
+		return metric != null ? metric.value() : this.distanceType.name();
 	}
 
 	@Override
@@ -599,8 +594,6 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 
 	private static class DocumentRowMapper implements RowMapper<Document> {
 
-		private static final String COLUMN_EMBEDDING = "embedding";
-
 		private static final String COLUMN_METADATA = "metadata";
 
 		private static final String COLUMN_ID = "id";
@@ -609,10 +602,10 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 
 		private static final String COLUMN_DISTANCE = "distance";
 
-		private final ObjectMapper objectMapper;
+		private final JsonMapper jsonMapper;
 
-		DocumentRowMapper(ObjectMapper objectMapper) {
-			this.objectMapper = objectMapper;
+		DocumentRowMapper(JsonMapper jsonMapper) {
+			this.jsonMapper = jsonMapper;
 		}
 
 		@Override
@@ -637,12 +630,7 @@ public class PgVectorStore extends AbstractObservationVectorStore implements Ini
 		private Map<String, Object> toMap(PGobject pgObject) {
 
 			String source = pgObject.getValue();
-			try {
-				return (Map<String, Object>) this.objectMapper.readValue(source, Map.class);
-			}
-			catch (JsonProcessingException e) {
-				throw new RuntimeException(e);
-			}
+			return (Map<String, Object>) this.jsonMapper.readValue(source, Map.class);
 		}
 
 	}

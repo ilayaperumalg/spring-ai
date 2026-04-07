@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,25 @@
 
 package org.springframework.ai.aot;
 
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
 import org.junit.jupiter.api.Test;
 
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.execution.DefaultToolCallResultConverter;
+import org.springframework.ai.tool.execution.ToolCallResultConverter;
 import org.springframework.aot.generate.GenerationContext;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.beans.factory.aot.BeanRegistrationAotContribution;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RegisteredBean;
 import org.springframework.beans.factory.support.RootBeanDefinition;
-import org.springframework.lang.Nullable;
+import org.springframework.core.annotation.AliasFor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -55,6 +64,12 @@ class ToolBeanRegistrationAotProcessorTests {
 		assertThat(reflection().onType(TestTools.class)).accepts(this.runtimeHints);
 	}
 
+	@Test
+	void shouldProcessEnhanceAnnotatedClass() {
+		process(TestEnhanceToolTools.class);
+		assertThat(reflection().onType(TestEnhanceToolTools.class)).accepts(this.runtimeHints);
+	}
+
 	private void process(Class<?> beanClass) {
 		when(this.generationContext.getRuntimeHints()).thenReturn(this.runtimeHints);
 		BeanRegistrationAotContribution contribution = createContribution(beanClass);
@@ -63,7 +78,7 @@ class ToolBeanRegistrationAotProcessorTests {
 		}
 	}
 
-	private static @Nullable BeanRegistrationAotContribution createContribution(Class<?> beanClass) {
+	private static BeanRegistrationAotContribution createContribution(Class<?> beanClass) {
 		DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
 		beanFactory.registerBeanDefinition(beanClass.getName(), new RootBeanDefinition(beanClass));
 		return new ToolBeanRegistrationAotProcessor()
@@ -83,6 +98,38 @@ class ToolBeanRegistrationAotProcessorTests {
 
 		String nonTool() {
 			return "More testing";
+		}
+
+	}
+
+	@Target({ ElementType.METHOD, ElementType.ANNOTATION_TYPE })
+	@Retention(RetentionPolicy.RUNTIME)
+	@Documented
+	@Tool
+	@Inherited
+	@interface EnhanceTool {
+
+		@AliasFor(annotation = Tool.class)
+		String name() default "";
+
+		@AliasFor(annotation = Tool.class)
+		String description() default "";
+
+		@AliasFor(annotation = Tool.class)
+		boolean returnDirect() default false;
+
+		@AliasFor(annotation = Tool.class)
+		Class<? extends ToolCallResultConverter> resultConverter() default DefaultToolCallResultConverter.class;
+
+		String enhanceValue() default "";
+
+	}
+
+	static class TestEnhanceToolTools {
+
+		@EnhanceTool
+		String testTool() {
+			return "Testing EnhanceTool";
 		}
 
 	}

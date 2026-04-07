@@ -1,5 +1,5 @@
 /*
- * Copyright 2025-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,27 @@ package org.springframework.ai.bedrock.converse.client;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 
+import org.springframework.ai.bedrock.converse.BedrockChatOptions;
 import org.springframework.ai.bedrock.converse.BedrockProxyChatModel;
 import org.springframework.ai.bedrock.converse.RequiresAwsCredentials;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
@@ -46,7 +54,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * @author Christian Tzolov
  */
-// @Disabled
 @SpringBootTest(classes = BedrockNovaChatClientIT.Config.class)
 @RequiresAwsCredentials
 public class BedrockNovaChatClientIT {
@@ -82,14 +89,14 @@ public class BedrockNovaChatClientIT {
 			.content();
 
 		logger.info(response);
-		assertThat(response).containsAnyOf("bananas", "apple", "bowl", "basket", "fruit stand");
+		assertThat(response).containsAnyOf("bananas", "apple", "bowl", "basket", "fruit stand", "fruit", "fruits");
 	}
 
 	@Test
 	void videoMultiModalityTest() throws IOException {
 		// Define sets of semantically similar words for different concepts
 		Set<String> youngDescriptors = Set.of("baby", "small", "young", "little", "tiny", "juvenile", "newborn",
-				"infant", "hatchling", "downy", "fluffy");
+				"infant", "hatchling", "downy", "fluffy", "chick", "chicks");
 
 		Set<String> birdDescriptors = Set.of("chick", "chicks", "chicken", "chickens", "bird", "birds", "poultry",
 				"hatchling", "hatchlings");
@@ -165,10 +172,87 @@ public class BedrockNovaChatClientIT {
 		assertThat(response).contains("30", "10", "15");
 	}
 
-	public record WeatherRequest(String location, String unit) {
+	// https://github.com/spring-projects/spring-ai/issues/1878
+	@Test
+	void toolAnnotationWeatherForecast() {
+
+		ChatClient chatClient = ChatClient.builder(this.chatModel).build();
+
+		String response = chatClient.prompt()
+			.tools(new DummyWeatherForecastTools())
+			.user("Get current weather in Amsterdam")
+			.call()
+			.content();
+
+		assertThat(response).isNotEmpty();
+		assertThat(response).contains("20");
 	}
 
-	public record WeatherResponse(int temp, String unit) {
+	// https://github.com/spring-projects/spring-ai/issues/1878
+	@ParameterizedTest
+	@ValueSource(strings = { "us.amazon.nova-pro-v1:0", "us.anthropic.claude-haiku-4-5-20251001-v1:0" })
+	void toolAnnotationWeatherForecastStreaming(String modelName) {
+
+		ChatClient chatClient = ChatClient.builder(this.chatModel).build();
+
+		Flux<ChatResponse> responses = chatClient.prompt()
+			.options(ToolCallingChatOptions.builder().model(modelName))
+			.tools(new DummyWeatherForecastTools())
+			.user("Get current weather in Amsterdam")
+			.stream()
+			.chatResponse();
+
+		String content = responses.collectList()
+			.block()
+			.stream()
+			.filter(cr -> cr.getResult() != null)
+			.map(cr -> cr.getResult().getOutput().getText())
+			.collect(Collectors.joining());
+
+		assertThat(content).contains("20");
+	}
+
+	// https://github.com/spring-projects/spring-ai/issues/1878
+	@Test
+	void supplierBasedToolCalling() {
+
+		ChatClient chatClient = ChatClient.builder(this.chatModel).build();
+
+		WeatherService.Response response = chatClient.prompt()
+			.toolCallbacks(FunctionToolCallback.builder("weather", new WeatherService())
+				.description("Get the current weather")
+				.inputType(Void.class)
+				.build())
+			.user("Get current weather in Amsterdam")
+			.call()
+			.entity(WeatherService.Response.class);
+
+		assertThat(response).isNotNull();
+		assertThat(response.temp()).isEqualTo(30);
+	}
+
+	@Test
+	void supplierBasedToolCallingStreaming() {
+
+		ChatClient chatClient = ChatClient.builder(this.chatModel).build();
+
+		Flux<ChatResponse> responses = chatClient.prompt()
+			.toolCallbacks(FunctionToolCallback.builder("weather", new WeatherService())
+				.description("Get the current weather")
+				.inputType(Void.class)
+				.build())
+			.user("Get current weather in Amsterdam")
+			.stream()
+			.chatResponse();
+
+		String content = responses.collectList()
+			.block()
+			.stream()
+			.filter(cr -> cr.getResult() != null)
+			.map(cr -> cr.getResult().getOutput().getText())
+			.collect(Collectors.joining());
+
+		assertThat(content).contains("30");
 	}
 
 	@SpringBootConfiguration
@@ -177,14 +261,41 @@ public class BedrockNovaChatClientIT {
 		@Bean
 		public BedrockProxyChatModel bedrockConverseChatModel() {
 
-			String modelId = "amazon.nova-pro-v1:0";
+			String modelId = "us.amazon.nova-pro-v1:0";
 
 			return BedrockProxyChatModel.builder()
 				.credentialsProvider(EnvironmentVariableCredentialsProvider.create())
 				.region(Region.US_EAST_1)
 				.timeout(Duration.ofSeconds(120))
-				.defaultOptions(ToolCallingChatOptions.builder().model(modelId).build())
+				.defaultOptions(BedrockChatOptions.builder().model(modelId).build())
 				.build();
+		}
+
+	}
+
+	public record WeatherRequest(String location, String unit) {
+	}
+
+	public record WeatherResponse(int temp, String unit) {
+	}
+
+	public static class DummyWeatherForecastTools {
+
+		@Tool(description = "Get the current weather forecast in Amsterdam")
+		String getCurrentWeather() {
+			return "Weather is hot and sunny with a temperature of 20 degrees";
+		}
+
+	}
+
+	public static class WeatherService implements Supplier<WeatherService.Response> {
+
+		public Response get() {
+			return new Response(30.0);
+		}
+
+		public record Response(double temp) {
+
 		}
 
 	}

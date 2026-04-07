@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 
 package org.springframework.ai.deepseek.api;
 
+import java.util.Objects;
+
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.jspecify.annotations.Nullable;
 
-import java.util.Objects;
+import org.springframework.util.Assert;
 
 /**
  * An object specifying the format that the model must output. Setting to { "type":
@@ -42,7 +45,7 @@ import java.util.Objects;
  */
 
 @JsonInclude(Include.NON_NULL)
-public class ResponseFormat {
+public final class ResponseFormat {
 
 	/**
 	 * Type Must be one of 'text', 'json_object'.
@@ -90,7 +93,7 @@ public class ResponseFormat {
 
 	public static final class Builder {
 
-		private Type type;
+		private @Nullable Type type;
 
 		private Builder() {
 		}
@@ -101,6 +104,7 @@ public class ResponseFormat {
 		}
 
 		public ResponseFormat build() {
+			Assert.state(this.type != null, "type must not be null");
 			return new ResponseFormat(this.type);
 		}
 

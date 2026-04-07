@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ public class TextReader implements DocumentReader {
 	private final Map<String, Object> customMetadata = new HashMap<>();
 
 	/**
-	 * Character set to be used when loading data from the
+	 * Character set to be used when loading data from the input resource.
 	 */
 	private Charset charset = StandardCharsets.UTF_8;
 
@@ -90,7 +90,6 @@ public class TextReader implements DocumentReader {
 
 			// Inject source information as a metadata.
 			this.customMetadata.put(CHARSET_METADATA, this.charset.name());
-			this.customMetadata.put(SOURCE_METADATA, this.resource.getFilename());
 			this.customMetadata.put(SOURCE_METADATA, getResourceIdentifier(this.resource));
 
 			return List.of(new Document(document, this.customMetadata));
@@ -111,9 +110,7 @@ public class TextReader implements DocumentReader {
 		// Try to get the URI
 		try {
 			URI uri = resource.getURI();
-			if (uri != null) {
-				return uri.toString();
-			}
+			return uri.toString();
 		}
 		catch (IOException ignored) {
 			// If getURI() throws an exception, we'll try the next method
@@ -122,9 +119,7 @@ public class TextReader implements DocumentReader {
 		// Try to get the URL
 		try {
 			URL url = resource.getURL();
-			if (url != null) {
-				return url.toString();
-			}
+			return url.toString();
 		}
 		catch (IOException ignored) {
 			// If getURL() throws an exception, we'll fall back to getDescription()

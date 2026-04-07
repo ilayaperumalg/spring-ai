@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.ai.model.chat.memory.autoconfigure;
 
 import org.junit.jupiter.api.Test;
+
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
@@ -40,7 +41,7 @@ class ChatMemoryAutoConfigurationTests {
 
 	@Test
 	void defaultConfiguration() {
-		contextRunner.run(context -> {
+		this.contextRunner.run(context -> {
 			assertThat(context).hasSingleBean(ChatMemoryRepository.class);
 			assertThat(context).hasSingleBean(ChatMemory.class);
 		});
@@ -48,7 +49,7 @@ class ChatMemoryAutoConfigurationTests {
 
 	@Test
 	void whenChatMemoryRepositoryExists() {
-		contextRunner.withUserConfiguration(CustomChatMemoryRepositoryConfiguration.class).run(context -> {
+		this.contextRunner.withUserConfiguration(CustomChatMemoryRepositoryConfiguration.class).run(context -> {
 			assertThat(context).hasSingleBean(ChatMemoryRepository.class);
 			assertThat(context).hasBean("customChatMemoryRepository");
 			assertThat(context).doesNotHaveBean("chatMemoryRepository");
@@ -57,7 +58,7 @@ class ChatMemoryAutoConfigurationTests {
 
 	@Test
 	void whenChatMemoryExists() {
-		contextRunner.withUserConfiguration(CustomChatMemoryRepositoryConfiguration.class).run(context -> {
+		this.contextRunner.withUserConfiguration(CustomChatMemoryRepositoryConfiguration.class).run(context -> {
 			assertThat(context).hasSingleBean(ChatMemoryRepository.class);
 			assertThat(context).hasBean("customChatMemoryRepository");
 			assertThat(context).doesNotHaveBean("chatMemoryRepository");
@@ -71,7 +72,7 @@ class ChatMemoryAutoConfigurationTests {
 
 		@Bean
 		ChatMemoryRepository customChatMemoryRepository() {
-			return customChatMemoryRepository;
+			return this.customChatMemoryRepository;
 		}
 
 	}
@@ -83,7 +84,7 @@ class ChatMemoryAutoConfigurationTests {
 
 		@Bean
 		ChatMemory customChatMemory() {
-			return customChatMemory;
+			return this.customChatMemory;
 		}
 
 	}

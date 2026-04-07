@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,13 +32,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
+import org.springframework.ai.content.Media;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.vectorstore.filter.Filter;
+import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
+import org.springframework.util.MimeType;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -108,6 +115,21 @@ class SimpleVectorStoreTests {
 
 		this.vectorStore.delete(List.of("1"));
 		assertThat(this.vectorStore.similaritySearch("test")).isEmpty();
+	}
+
+	@Test
+	void shouldDeleteDocumentsByFilter() {
+		Document doc = Document.builder().id("1").text("test content").metadata("testKey", 1).build();
+
+		this.vectorStore.add(List.of(doc));
+		assertThat(this.vectorStore.similaritySearch("test")).hasSize(1);
+
+		FilterExpressionBuilder builder = new FilterExpressionBuilder();
+
+		Filter.Expression condition = builder.eq("testKey", 1).build();
+
+		this.vectorStore.delete(condition);
+		assertThat(this.vectorStore.store.isEmpty());
 	}
 
 	@Test
@@ -257,6 +279,61 @@ class SimpleVectorStoreTests {
 		assertThatThrownBy(() -> SimpleVectorStore.EmbeddingMath.cosineSimilarity(vector, null))
 			.isInstanceOf(RuntimeException.class)
 			.hasMessage("Vectors must not be null");
+	}
+
+	@Test
+	void shouldFailNonTextDocuments() {
+		Media media = new Media(MimeType.valueOf("image/png"), new ByteArrayResource(new byte[] { 0x00 }));
+
+		Document imgDoc = Document.builder().media(media).metadata(Map.of("fileName", "pixel.png")).build();
+
+		Exception exception = assertThrows(IllegalArgumentException.class, () -> this.vectorStore.add(List.of(imgDoc)));
+		assertEquals("Only text documents are supported for now. One of the documents contains non-text content.",
+				exception.getMessage());
+	}
+
+	@Test
+	void shouldHandleDocumentWithoutId() {
+		Document doc = Document.builder().text("content without id").build();
+
+		this.vectorStore.add(List.of(doc));
+
+		List<Document> results = this.vectorStore.similaritySearch("content");
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getId()).isNotEmpty();
+	}
+
+	@Test
+	void shouldHandleDocumentWithEmptyText() {
+		Document doc = Document.builder().id("1").text("").build();
+
+		assertDoesNotThrow(() -> this.vectorStore.add(List.of(doc)));
+
+		List<Document> results = this.vectorStore.similaritySearch("anything");
+		assertThat(results).hasSize(1);
+	}
+
+	@Test
+	void shouldReplaceDocumentWithSameId() {
+		Document doc1 = Document.builder().id("1").text("original").metadata(Map.of("version", "1")).build();
+		Document doc2 = Document.builder().id("1").text("updated").metadata(Map.of("version", "2")).build();
+
+		this.vectorStore.add(List.of(doc1));
+		this.vectorStore.add(List.of(doc2));
+
+		List<Document> results = this.vectorStore.similaritySearch("updated");
+		assertThat(results).hasSize(1);
+		assertThat(results.get(0).getText()).isEqualTo("updated");
+		assertThat(results.get(0).getMetadata()).containsEntry("version", "2");
+	}
+
+	@Test
+	void shouldHandleSearchWithEmptyQuery() {
+		Document doc = Document.builder().id("1").text("content").build();
+		this.vectorStore.add(List.of(doc));
+
+		List<Document> results = this.vectorStore.similaritySearch("");
+		assertThat(results).hasSize(1);
 	}
 
 }

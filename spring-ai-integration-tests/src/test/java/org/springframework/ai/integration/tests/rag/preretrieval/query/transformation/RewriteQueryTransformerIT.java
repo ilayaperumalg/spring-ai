@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.integration.tests.TestApplication;
-import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openaisdk.OpenAiSdkChatModel;
 import org.springframework.ai.rag.Query;
 import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransformer;
 import org.springframework.ai.rag.preretrieval.query.transformation.RewriteQueryTransformer;
@@ -36,11 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Thomas Vitale
  */
 @SpringBootTest(classes = TestApplication.class)
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".*")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 class RewriteQueryTransformerIT {
 
 	@Autowired
-	OpenAiChatModel openAiChatModel;
+	OpenAiSdkChatModel openAiChatModel;
 
 	@Test
 	void whenTransformerWithDefaults() {

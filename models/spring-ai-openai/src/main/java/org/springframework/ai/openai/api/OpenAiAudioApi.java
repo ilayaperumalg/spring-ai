@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.ai.openai.api;
 import java.util.List;
 import java.util.function.Consumer;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -26,6 +27,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.ai.model.ApiKey;
+import org.springframework.ai.model.ChatModelDescription;
 import org.springframework.ai.model.NoopApiKey;
 import org.springframework.ai.model.SimpleApiKey;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
@@ -48,9 +50,15 @@ import org.springframework.web.reactive.function.client.WebClient;
  * @author Christian Tzolov
  * @author Ilayaperumal Gopinathan
  * @author Jonghoon Park
+ * @author Filip Hrisafov
+ * @author Alexandros Pappas
  * @since 0.8.1
  */
 public class OpenAiAudioApi {
+
+	private final String speechPath;
+
+	private final String transcriptionPath;
 
 	private final RestClient restClient;
 
@@ -60,30 +68,56 @@ public class OpenAiAudioApi {
 	 * Create a new audio api.
 	 * @param baseUrl api base URL.
 	 * @param apiKey OpenAI apiKey.
+	 * @param speechPath The path to the audio speech endpoint.
+	 * @param transcriptionPath The path to the audio transcription endpoint.
 	 * @param headers the http headers to use.
 	 * @param restClientBuilder RestClient builder.
 	 * @param webClientBuilder WebClient builder.
 	 * @param responseErrorHandler Response error handler.
 	 */
-	public OpenAiAudioApi(String baseUrl, ApiKey apiKey, MultiValueMap<String, String> headers,
-			RestClient.Builder restClientBuilder, WebClient.Builder webClientBuilder,
+	public OpenAiAudioApi(String baseUrl, ApiKey apiKey, String speechPath, String transcriptionPath,
+			HttpHeaders headers, RestClient.Builder restClientBuilder, WebClient.Builder webClientBuilder,
 			ResponseErrorHandler responseErrorHandler) {
+		this.speechPath = speechPath;
+		this.transcriptionPath = transcriptionPath;
 
-		Consumer<HttpHeaders> authHeaders = h -> {
-			if (!(apiKey instanceof NoopApiKey)) {
-				h.setBearerAuth(apiKey.getValue());
-			}
-			h.addAll(headers);
-			// h.setContentType(MediaType.APPLICATION_JSON);
-		};
+		Consumer<HttpHeaders> authHeaders = h -> h.addAll(HttpHeaders.readOnlyHttpHeaders(headers));
 
+		// @formatter:off
 		this.restClient = restClientBuilder.clone()
 			.baseUrl(baseUrl)
 			.defaultHeaders(authHeaders)
 			.defaultStatusHandler(responseErrorHandler)
+			.defaultRequest(requestHeadersSpec -> {
+				if (!(apiKey instanceof NoopApiKey)) {
+					requestHeadersSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.getValue());
+				}
+			})
 			.build();
 
-		this.webClient = webClientBuilder.clone().baseUrl(baseUrl).defaultHeaders(authHeaders).build();
+		this.webClient = webClientBuilder.clone()
+			.baseUrl(baseUrl)
+			.defaultHeaders(authHeaders)
+			.defaultRequest(requestHeadersSpec -> {
+				if (!(apiKey instanceof NoopApiKey)) {
+					requestHeadersSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.getValue());
+				}
+			})
+			.build(); // @formatter:on
+	}
+
+	/**
+	 * Create a new audio api.
+	 * @param speechPath The path to the audio speech endpoint.
+	 * @param transcriptionPath The path to the audio transcription endpoint.
+	 * @param restClient RestClient instance.
+	 * @param webClient WebClient instance.
+	 */
+	public OpenAiAudioApi(String speechPath, String transcriptionPath, RestClient restClient, WebClient webClient) {
+		this.speechPath = speechPath;
+		this.transcriptionPath = transcriptionPath;
+		this.restClient = restClient;
+		this.webClient = webClient;
 	}
 
 	public static Builder builder() {
@@ -96,7 +130,7 @@ public class OpenAiAudioApi {
 	 * @return Response entity containing the audio binary.
 	 */
 	public ResponseEntity<byte[]> createSpeech(SpeechRequest requestBody) {
-		return this.restClient.post().uri("/v1/audio/speech").body(requestBody).retrieve().toEntity(byte[].class);
+		return this.restClient.post().uri(this.speechPath).body(requestBody).retrieve().toEntity(byte[].class);
 	}
 
 	/**
@@ -113,7 +147,7 @@ public class OpenAiAudioApi {
 	public Flux<ResponseEntity<byte[]>> stream(SpeechRequest requestBody) {
 
 		return this.webClient.post()
-			.uri("/v1/audio/speech")
+			.uri(this.speechPath)
 			.body(Mono.just(requestBody), SpeechRequest.class)
 			.accept(MediaType.APPLICATION_OCTET_STREAM)
 			.exchangeToFlux(clientResponse -> {
@@ -148,7 +182,7 @@ public class OpenAiAudioApi {
 
 			@Override
 			public String getFilename() {
-				return "audio.webm";
+				return requestBody.fileName();
 			}
 		});
 		multipartBody.add("model", requestBody.model());
@@ -162,11 +196,7 @@ public class OpenAiAudioApi {
 			multipartBody.add("timestamp_granularities[]", requestBody.granularityType().getValue());
 		}
 
-		return this.restClient.post()
-			.uri("/v1/audio/transcriptions")
-			.body(multipartBody)
-			.retrieve()
-			.toEntity(responseType);
+		return this.restClient.post().uri(this.transcriptionPath).body(multipartBody).retrieve().toEntity(responseType);
 	}
 
 	/**
@@ -194,7 +224,7 @@ public class OpenAiAudioApi {
 
 			@Override
 			public String getFilename() {
-				return "audio.webm";
+				return requestBody.fileName();
 			}
 		});
 		multipartBody.add("model", requestBody.model());
@@ -214,21 +244,26 @@ public class OpenAiAudioApi {
 	 * different model variates, tts-1 is optimized for real time text to speech use cases
 	 * and tts-1-hd is optimized for quality. These models can be used with the Speech
 	 * endpoint in the Audio API. Reference:
-	 * <a href="https://platform.openai.com/docs/models/tts">TTS</a>
+	 * <a href="https://platform.openai.com/docs/models#tts">TTS</a>
 	 */
 	public enum TtsModel {
 
 		// @formatter:off
 		/**
-		 * The latest text to speech model, optimized for speed.
+		 * Text-to-speech model optimized for speed
 		 */
 		@JsonProperty("tts-1")
 		TTS_1("tts-1"),
 		/**
-		 * The latest text to speech model, optimized for quality.
+		 * Text-to-speech model optimized for quality.
 		 */
 		@JsonProperty("tts-1-hd")
-		TTS_1_HD("tts-1-hd");
+		TTS_1_HD("tts-1-hd"),
+		/**
+		 * Text-to-speech model powered by GPT-4o mini
+		 */
+		@JsonProperty("gpt-4o-mini-tts")
+		GPT_4_O_MINI_TTS("gpt-4o-mini-tts");
 		// @formatter:on
 
 		public final String value;
@@ -265,6 +300,47 @@ public class OpenAiAudioApi {
 		}
 
 		public String getValue() {
+			return this.value;
+		}
+
+	}
+
+	/**
+	 * The available models for the transcriptions API. Reference:
+	 * <a href="https://platform.openai.com/docs/models#transcription">
+	 */
+	public enum TranscriptionModels implements ChatModelDescription {
+
+		/**
+		 * Speech-to-text model powered by GPT-4o
+		 */
+		@JsonProperty("gpt-4o-transcribe")
+		GPT_4O_TRANSCRIBE("gpt-4o-transcribe"),
+
+		/**
+		 * Speech-to-text model powered by GPT-4o mini
+		 */
+		@JsonProperty("gpt-4o-mini-transcribe")
+		GPT_4O_MINI_TRANSCRIBE("gpt-4o-mini-transcribe"),
+
+		/**
+		 * General-purpose speech recognition model
+		 */
+		@JsonProperty("whisper-1")
+		WHISPER_1("whisper-1");
+
+		public final String value;
+
+		TranscriptionModels(String value) {
+			this.value = value;
+		}
+
+		public String getValue() {
+			return this.value;
+		}
+
+		@Override
+		public String getName() {
 			return this.value;
 		}
 
@@ -318,14 +394,15 @@ public class OpenAiAudioApi {
 	 * Speech</a>
 	 *
 	 * @param model The model to use for generating the audio. One of the available TTS
-	 * models: tts-1 or tts-1-hd.
+	 * models: tts-1, tts-1-hd, or gpt-4o-mini-tts.
 	 * @param input The input text to synthesize. Must be at most 4096 tokens long.
 	 * @param voice The voice to use for synthesis. One of the available voices for the
-	 * chosen model: 'alloy', 'echo', 'fable', 'onyx', 'nova', and 'shimmer'.
+	 * chosen model: 'alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'onyx', 'nova',
+	 * 'sage', 'shimmer', and 'verse'.
 	 * @param responseFormat The format to audio in. Supported formats are mp3, opus, aac,
-	 * and flac. Defaults to mp3.
+	 * flac, wav, and pcm. Defaults to mp3.
 	 * @param speed The speed of the voice synthesis. The acceptable range is from 0.25
-	 * (slowest) to 4.0 (fastest).
+	 * (slowest) to 4.0 (fastest). Does not work with gpt-4o-mini-tts.
 	 */
 	@JsonInclude(Include.NON_NULL)
 	public record SpeechRequest(
@@ -334,7 +411,7 @@ public class OpenAiAudioApi {
 		@JsonProperty("input") String input,
 		@JsonProperty("voice") String voice,
 		@JsonProperty("response_format") AudioResponseFormat responseFormat,
-		@JsonProperty("speed") Float speed) {
+		@JsonProperty("speed") Double speed) {
 		// @formatter:on
 
 		public static Builder builder() {
@@ -349,6 +426,8 @@ public class OpenAiAudioApi {
 			// @formatter:off
 			@JsonProperty("alloy")
 			ALLOY("alloy"),
+			@JsonProperty("ballad")
+			BALLAD("ballad"),
 			@JsonProperty("echo")
 			ECHO("echo"),
 			@JsonProperty("fable")
@@ -364,7 +443,9 @@ public class OpenAiAudioApi {
 			@JsonProperty("coral")
 			CORAL("coral"),
 			@JsonProperty("ash")
-			ASH("ash");
+			ASH("ash"),
+			@JsonProperty("verse")
+			VERSE("verse");
 			// @formatter:on
 
 			public final String value;
@@ -415,9 +496,9 @@ public class OpenAiAudioApi {
 		/**
 		 * Builder for the SpeechRequest.
 		 */
-		public static class Builder {
+		public static final class Builder {
 
-			private String model = TtsModel.TTS_1.getValue();
+			private String model = TtsModel.GPT_4_O_MINI_TTS.getValue();
 
 			private String input;
 
@@ -425,7 +506,7 @@ public class OpenAiAudioApi {
 
 			private AudioResponseFormat responseFormat = AudioResponseFormat.MP3;
 
-			private Float speed;
+			private Double speed;
 
 			public Builder model(String model) {
 				this.model = model;
@@ -452,7 +533,7 @@ public class OpenAiAudioApi {
 				return this;
 			}
 
-			public Builder speed(Float speed) {
+			public Builder speed(Double speed) {
 				this.speed = speed;
 				return this;
 			}
@@ -474,6 +555,7 @@ public class OpenAiAudioApi {
 	 * Transcription</a>
 	 *
 	 * @param file The audio file to transcribe. Must be a valid audio file type.
+	 * @param fileName The audio file name.
 	 * @param model ID of the model to use. Only whisper-1 is currently available.
 	 * @param language The language of the input audio. Supplying the input language in
 	 * ISO-639-1 format will improve accuracy and latency.
@@ -495,6 +577,7 @@ public class OpenAiAudioApi {
 	public record TranscriptionRequest(
 	// @formatter:off
 		@JsonProperty("file") byte[] file,
+		@JsonProperty("fileName") String fileName,
 		@JsonProperty("model") String model,
 		@JsonProperty("language") String language,
 		@JsonProperty("prompt") String prompt,
@@ -528,11 +611,13 @@ public class OpenAiAudioApi {
 
 		}
 
-		public static class Builder {
+		public static final class Builder {
 
 			private byte[] file;
 
-			private String model = WhisperModel.WHISPER_1.getValue();
+			private String fileName;
+
+			private String model = TranscriptionModels.WHISPER_1.getValue();
 
 			private String language;
 
@@ -546,6 +631,11 @@ public class OpenAiAudioApi {
 
 			public Builder file(byte[] file) {
 				this.file = file;
+				return this;
+			}
+
+			public Builder fileName(String fileName) {
+				this.fileName = fileName;
 				return this;
 			}
 
@@ -581,11 +671,12 @@ public class OpenAiAudioApi {
 
 			public TranscriptionRequest build() {
 				Assert.notNull(this.file, "file must not be null");
+				Assert.notNull(this.fileName, "fileName must not be null");
 				Assert.hasText(this.model, "model must not be empty");
 				Assert.notNull(this.responseFormat, "response_format must not be null");
 
-				return new TranscriptionRequest(this.file, this.model, this.language, this.prompt, this.responseFormat,
-						this.temperature, this.granularityType);
+				return new TranscriptionRequest(this.file, this.fileName, this.model, this.language, this.prompt,
+						this.responseFormat, this.temperature, this.granularityType);
 			}
 
 		}
@@ -597,6 +688,7 @@ public class OpenAiAudioApi {
 	 *
 	 * @param file The audio file object (not file name) to translate, in one of these
 	 * formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, or webm.
+	 * @param fileName The audio file name.
 	 * @param model ID of the model to use. Only whisper-1 is currently available.
 	 * @param prompt An optional text to guide the model's style or continue a previous
 	 * audio segment. The prompt should be in English.
@@ -611,6 +703,7 @@ public class OpenAiAudioApi {
 	public record TranslationRequest(
 	// @formatter:off
 		@JsonProperty("file") byte[] file,
+		@JsonProperty("fileName") String fileName,
 		@JsonProperty("model") String model,
 		@JsonProperty("prompt") String prompt,
 		@JsonProperty("response_format") TranscriptResponseFormat responseFormat,
@@ -621,11 +714,13 @@ public class OpenAiAudioApi {
 			return new Builder();
 		}
 
-		public static class Builder {
+		public static final class Builder {
 
 			private byte[] file;
 
-			private String model = WhisperModel.WHISPER_1.getValue();
+			private String fileName;
+
+			private String model = TranscriptionModels.WHISPER_1.getValue();
 
 			private String prompt;
 
@@ -635,6 +730,11 @@ public class OpenAiAudioApi {
 
 			public Builder file(byte[] file) {
 				this.file = file;
+				return this;
+			}
+
+			public Builder fileName(String fileName) {
+				this.fileName = fileName;
 				return this;
 			}
 
@@ -663,7 +763,7 @@ public class OpenAiAudioApi {
 				Assert.hasText(this.model, "model must not be empty");
 				Assert.notNull(this.responseFormat, "response_format must not be null");
 
-				return new TranslationRequest(this.file, this.model, this.prompt, this.responseFormat,
+				return new TranslationRequest(this.file, this.fileName, this.model, this.prompt, this.responseFormat,
 						this.temperature);
 			}
 
@@ -685,6 +785,7 @@ public class OpenAiAudioApi {
 	 * details.
 	 */
 	@JsonInclude(Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record StructuredResponse(
 	// @formatter:off
 		@JsonProperty("language") String language,
@@ -702,6 +803,7 @@ public class OpenAiAudioApi {
 		 * @param end The end time of the word in seconds.
 		 */
 		@JsonInclude(Include.NON_NULL)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record Word(
 		// @formatter:off
 			@JsonProperty("word") String word,
@@ -728,6 +830,7 @@ public class OpenAiAudioApi {
 		 * higher than 1.0 and the avg_logprob is below -1, consider this segment silent.
 		 */
 		@JsonInclude(Include.NON_NULL)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record Segment(
 		// @formatter:off
 			@JsonProperty("id") Integer id,
@@ -748,13 +851,17 @@ public class OpenAiAudioApi {
 	/**
 	 * Builder to construct {@link OpenAiAudioApi} instance.
 	 */
-	public static class Builder {
+	public static final class Builder {
 
 		private String baseUrl = OpenAiApiConstants.DEFAULT_BASE_URL;
 
 		private ApiKey apiKey;
 
-		private MultiValueMap<String, String> headers = new LinkedMultiValueMap<>();
+		private String speechPath = "/v1/audio/speech";
+
+		private String transcriptionPath = "/v1/audio/transcriptions";
+
+		private HttpHeaders headers = new HttpHeaders();
 
 		private RestClient.Builder restClientBuilder = RestClient.builder();
 
@@ -780,7 +887,19 @@ public class OpenAiAudioApi {
 			return this;
 		}
 
-		public Builder headers(MultiValueMap<String, String> headers) {
+		public Builder speechPath(String speechPath) {
+			Assert.hasText(speechPath, "speechPath cannot be null or empty");
+			this.speechPath = speechPath;
+			return this;
+		}
+
+		public Builder transcriptionPath(String transcriptionPath) {
+			Assert.hasText(transcriptionPath, "transcriptionPath cannot be null or empty");
+			this.transcriptionPath = transcriptionPath;
+			return this;
+		}
+
+		public Builder headers(HttpHeaders headers) {
 			Assert.notNull(headers, "headers cannot be null");
 			this.headers = headers;
 			return this;
@@ -806,8 +925,8 @@ public class OpenAiAudioApi {
 
 		public OpenAiAudioApi build() {
 			Assert.notNull(this.apiKey, "apiKey must be set");
-			return new OpenAiAudioApi(this.baseUrl, this.apiKey, this.headers, this.restClientBuilder,
-					this.webClientBuilder, this.responseErrorHandler);
+			return new OpenAiAudioApi(this.baseUrl, this.apiKey, this.speechPath, this.transcriptionPath, this.headers,
+					this.restClientBuilder, this.webClientBuilder, this.responseErrorHandler);
 		}
 
 	}

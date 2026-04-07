@@ -1,5 +1,5 @@
 /*
- * Copyright 2025-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ public class OpenAiAudioModelNoOpApiKeysIT {
 	void checkNoOpKey() {
 		assertThatThrownBy(() -> this.audioApi
 			.createSpeech(OpenAiAudioApi.SpeechRequest.builder()
-				.model(OpenAiAudioApi.TtsModel.TTS_1_HD.getValue())
+				.model(OpenAiAudioApi.TtsModel.GPT_4_O_MINI_TTS.getValue())
 				.input("Hello, my name is Chris and I love Spring A.I.")
 				.voice(OpenAiAudioApi.SpeechRequest.Voice.ONYX.getValue())
 				.build())
@@ -56,7 +56,11 @@ public class OpenAiAudioModelNoOpApiKeysIT {
 
 		@Bean
 		public OpenAiAudioApi openAiAudioApi() {
-			return OpenAiAudioApi.builder().apiKey(new NoopApiKey()).build();
+			return OpenAiAudioApi.builder()
+				.apiKey(new NoopApiKey())
+				.speechPath("/v1/audio/speech")
+				.transcriptionPath("/v1/audio/transcriptions")
+				.build();
 		}
 
 	}

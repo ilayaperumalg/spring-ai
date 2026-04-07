@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,28 +36,36 @@ public class OpenAiAudioSpeechProperties extends OpenAiParentProperties {
 
 	public static final String CONFIG_PREFIX = "spring.ai.openai.audio.speech";
 
-	public static final String DEFAULT_SPEECH_MODEL = OpenAiAudioApi.TtsModel.TTS_1.getValue();
+	public static final String DEFAULT_SPEECH_MODEL = OpenAiAudioApi.TtsModel.GPT_4_O_MINI_TTS.getValue();
 
-	private static final Float SPEED = 1.0f;
+	public static final String DEFAULT_SPEECH_PATH = "/v1/audio/speech";
+
+	private static final Double SPEED = 1.0;
 
 	private static final String VOICE = OpenAiAudioApi.SpeechRequest.Voice.ALLOY.getValue();
+
+	private String speechPath = DEFAULT_SPEECH_PATH;
 
 	private static final OpenAiAudioApi.SpeechRequest.AudioResponseFormat DEFAULT_RESPONSE_FORMAT = OpenAiAudioApi.SpeechRequest.AudioResponseFormat.MP3;
 
 	@NestedConfigurationProperty
-	private OpenAiAudioSpeechOptions options = OpenAiAudioSpeechOptions.builder()
+	private final OpenAiAudioSpeechOptions options = OpenAiAudioSpeechOptions.builder()
 		.model(DEFAULT_SPEECH_MODEL)
 		.responseFormat(DEFAULT_RESPONSE_FORMAT)
 		.voice(VOICE)
 		.speed(SPEED)
 		.build();
 
-	public OpenAiAudioSpeechOptions getOptions() {
-		return this.options;
+	public String getSpeechPath() {
+		return this.speechPath;
 	}
 
-	public void setOptions(OpenAiAudioSpeechOptions options) {
-		this.options = options;
+	public void setSpeechPath(String speechPath) {
+		this.speechPath = speechPath;
+	}
+
+	public OpenAiAudioSpeechOptions getOptions() {
+		return this.options;
 	}
 
 }

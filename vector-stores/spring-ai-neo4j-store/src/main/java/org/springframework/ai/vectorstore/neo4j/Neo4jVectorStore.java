@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.ai.vectorstore.neo4j;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.neo4j.cypherdsl.support.schema_name.SchemaNames;
@@ -31,12 +32,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
+import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.ai.observation.conventions.VectorStoreProvider;
 import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
 import org.springframework.ai.vectorstore.AbstractVectorStoreBuilder;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.filter.Filter;
+import org.springframework.ai.vectorstore.filter.FilterExpressionConverter;
 import org.springframework.ai.vectorstore.neo4j.filter.Neo4jVectorFilterExpressionConverter;
 import org.springframework.ai.vectorstore.observation.AbstractObservationVectorStore;
 import org.springframework.ai.vectorstore.observation.VectorStoreObservationContext;
@@ -136,8 +138,6 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 
 	private static final Logger logger = LoggerFactory.getLogger(Neo4jVectorStore.class);
 
-	public static final int DEFAULT_EMBEDDING_DIMENSION = 1536;
-
 	public static final int DEFAULT_TRANSACTION_SIZE = 10_000;
 
 	public static final String DEFAULT_LABEL = "Document";
@@ -147,6 +147,8 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 	public static final String DEFAULT_EMBEDDING_PROPERTY = "embedding";
 
 	public static final String DEFAULT_ID_PROPERTY = "id";
+
+	public static final String DEFAULT_TEXT_PROPERTY = "text";
 
 	public static final String DEFAULT_CONSTRAINT_NAME = DEFAULT_LABEL + "_unique_idx";
 
@@ -172,11 +174,13 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 
 	private final String idProperty;
 
+	private final String textProperty;
+
 	private final String constraintName;
 
-	private final Neo4jVectorFilterExpressionConverter filterExpressionConverter = new Neo4jVectorFilterExpressionConverter();
-
 	private final boolean initializeSchema;
+
+	private final FilterExpressionConverter filterExpressionConverter;
 
 	protected Neo4jVectorStore(Builder builder) {
 		super(builder);
@@ -185,28 +189,30 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 
 		this.driver = builder.driver;
 		this.sessionConfig = builder.sessionConfig;
-		this.embeddingDimension = builder.embeddingDimension;
+		this.embeddingDimension = builder.embeddingDimension.orElseGet(() -> builder.getEmbeddingModel().dimensions());
 		this.distanceType = builder.distanceType;
 		this.embeddingProperty = SchemaNames.sanitize(builder.embeddingProperty).orElseThrow();
 		this.label = SchemaNames.sanitize(builder.label).orElseThrow();
 		this.indexNameNotSanitized = builder.indexName;
 		this.indexName = SchemaNames.sanitize(builder.indexName, true).orElseThrow();
 		this.idProperty = SchemaNames.sanitize(builder.idProperty).orElseThrow();
+		this.textProperty = SchemaNames.sanitize(builder.textProperty).orElseThrow();
 		this.constraintName = SchemaNames.sanitize(builder.constraintName).orElseThrow();
 		this.initializeSchema = builder.initializeSchema;
+		this.filterExpressionConverter = builder.filterExpressionConverter;
 	}
 
 	@Override
 	public void doAdd(List<Document> documents) {
 
-		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptions.builder().build(),
 				this.batchingStrategy);
 
 		var rows = documents.stream()
 			.map(document -> documentToRecord(document, embeddings.get(documents.indexOf(document))))
 			.toList();
 
-		try (var session = this.driver.session()) {
+		try (var session = this.driver.session(this.sessionConfig)) {
 			var statement = """
 						UNWIND $rows AS row
 						MERGE (u:%s {%2$s: row.id})
@@ -270,6 +276,7 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 		try (var session = this.driver.session(this.sessionConfig)) {
 			StringBuilder condition = new StringBuilder("score >= $threshold");
 			if (request.hasFilterExpression()) {
+				Assert.state(request.getFilterExpression() != null, "filter expression can't be null");
 				condition.append(" AND ")
 					.append(this.filterExpressionConverter.convertExpression(request.getFilterExpression()));
 			}
@@ -323,7 +330,7 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 		row.put("id", document.getId());
 
 		var properties = new HashMap<String, Object>();
-		properties.put("text", document.getText());
+		properties.put(this.textProperty, Objects.requireNonNullElse(document.getText(), ""));
 
 		document.getMetadata().forEach((k, v) -> properties.put("metadata." + k, Values.value(v)));
 		row.put("properties", properties);
@@ -345,7 +352,7 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 
 		return Document.builder()
 			.id(node.get(this.idProperty).asString())
-			.text(node.get("text").asString())
+			.text(node.get(this.textProperty).asString())
 			.metadata(Map.copyOf(metaData))
 			.score((double) score)
 			.build();
@@ -399,7 +406,7 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 
 		private SessionConfig sessionConfig = SessionConfig.defaultConfig();
 
-		private int embeddingDimension = DEFAULT_EMBEDDING_DIMENSION;
+		private Optional<Integer> embeddingDimension = Optional.empty();
 
 		private Neo4jDistanceType distanceType = Neo4jDistanceType.COSINE;
 
@@ -411,9 +418,13 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 
 		private String idProperty = DEFAULT_ID_PROPERTY;
 
+		private String textProperty = DEFAULT_TEXT_PROPERTY;
+
 		private String constraintName = DEFAULT_CONSTRAINT_NAME;
 
 		private boolean initializeSchema = false;
+
+		private FilterExpressionConverter filterExpressionConverter = new Neo4jVectorFilterExpressionConverter();
 
 		private Builder(Driver driver, EmbeddingModel embeddingModel) {
 			super(embeddingModel);
@@ -452,7 +463,7 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 		 */
 		public Builder embeddingDimension(int dimension) {
 			Assert.isTrue(dimension >= 1, "Dimension has to be positive");
-			this.embeddingDimension = dimension;
+			this.embeddingDimension = Optional.of(dimension);
 			return this;
 		}
 
@@ -517,6 +528,18 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 		}
 
 		/**
+		 * Sets the property name for text-content.
+		 * @param textProperty the text property to use
+		 * @return the builder instance
+		 */
+		public Builder textProperty(String textProperty) {
+			if (StringUtils.hasText(textProperty)) {
+				this.textProperty = textProperty;
+			}
+			return this;
+		}
+
+		/**
 		 * Sets the name of the unique constraint.
 		 * @param constraintName the constraint name to use
 		 * @return the builder instance
@@ -535,6 +558,19 @@ public class Neo4jVectorStore extends AbstractObservationVectorStore implements 
 		 */
 		public Builder initializeSchema(boolean initializeSchema) {
 			this.initializeSchema = initializeSchema;
+			return this;
+		}
+
+		/**
+		 * Sets the {@link FilterExpressionConverter} to use when converting filter
+		 * expressions to Neo4j Cypher queries. Defaults to
+		 * {@link Neo4jVectorFilterExpressionConverter}.
+		 * @param filterExpressionConverter the filter expression converter to use
+		 * @return the builder instance
+		 */
+		public Builder filterExpressionConverter(FilterExpressionConverter filterExpressionConverter) {
+			Assert.notNull(filterExpressionConverter, "FilterExpressionConverter must not be null");
+			this.filterExpressionConverter = filterExpressionConverter;
 			return this;
 		}
 

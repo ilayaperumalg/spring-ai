@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Configuration properties for chat model observations.
  *
  * @author Thomas Vitale
+ * @author Christian Tzolov
  * @since 1.0.0
  */
 @ConfigurationProperties(ChatObservationProperties.CONFIG_PREFIX)
@@ -30,34 +31,34 @@ public class ChatObservationProperties {
 	public static final String CONFIG_PREFIX = "spring.ai.chat.observations";
 
 	/**
-	 * Whether to include the completion content in the observations.
+	 * Whether to log the completion content in the observations.
 	 */
-	private boolean includeCompletion = false;
+	private boolean logCompletion = false;
 
 	/**
-	 * Whether to include the prompt content in the observations.
+	 * Whether to log the prompt content in the observations.
 	 */
-	private boolean includePrompt = false;
+	private boolean logPrompt = false;
 
 	/**
 	 * Whether to include error logging in the observations.
 	 */
 	private boolean includeErrorLogging = false;
 
-	public boolean isIncludeCompletion() {
-		return this.includeCompletion;
+	public boolean isLogCompletion() {
+		return this.logCompletion;
 	}
 
-	public void setIncludeCompletion(boolean includeCompletion) {
-		this.includeCompletion = includeCompletion;
+	public void setLogCompletion(boolean logCompletion) {
+		this.logCompletion = logCompletion;
 	}
 
-	public boolean isIncludePrompt() {
-		return this.includePrompt;
+	public boolean isLogPrompt() {
+		return this.logPrompt;
 	}
 
-	public void setIncludePrompt(boolean includePrompt) {
-		this.includePrompt = includePrompt;
+	public void setLogPrompt(boolean logPrompt) {
+		this.logPrompt = logPrompt;
 	}
 
 	public boolean isIncludeErrorLogging() {

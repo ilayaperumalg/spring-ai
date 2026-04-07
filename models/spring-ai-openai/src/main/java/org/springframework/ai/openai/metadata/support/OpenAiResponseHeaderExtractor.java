@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,22 +71,18 @@ public final class OpenAiResponseHeaderExtractor {
 
 	private static Duration getHeaderAsDuration(ResponseEntity<?> response, String headerName) {
 		var headers = response.getHeaders();
-		if (headers.containsKey(headerName)) {
-			var values = headers.get(headerName);
-			if (!CollectionUtils.isEmpty(values)) {
-				return DurationFormatter.TIME_UNIT.parse(values.get(0));
-			}
+		var values = headers.get(headerName);
+		if (!CollectionUtils.isEmpty(values)) {
+			return DurationFormatter.TIME_UNIT.parse(values.get(0));
 		}
 		return null;
 	}
 
 	private static Long getHeaderAsLong(ResponseEntity<?> response, String headerName) {
 		var headers = response.getHeaders();
-		if (headers.containsKey(headerName)) {
-			var values = headers.get(headerName);
-			if (!CollectionUtils.isEmpty(values)) {
-				return parseLong(headerName, values.get(0));
-			}
+		var values = headers.get(headerName);
+		if (!CollectionUtils.isEmpty(values)) {
+			return parseLong(headerName, values.get(0));
 		}
 		return null;
 	}

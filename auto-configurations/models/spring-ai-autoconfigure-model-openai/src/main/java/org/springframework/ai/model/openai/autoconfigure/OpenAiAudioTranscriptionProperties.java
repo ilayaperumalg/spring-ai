@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,25 +26,30 @@ public class OpenAiAudioTranscriptionProperties extends OpenAiParentProperties {
 
 	public static final String CONFIG_PREFIX = "spring.ai.openai.audio.transcription";
 
-	public static final String DEFAULT_TRANSCRIPTION_MODEL = OpenAiAudioApi.WhisperModel.WHISPER_1.getValue();
+	public static final String DEFAULT_TRANSCRIPTION_MODEL = OpenAiAudioApi.TranscriptionModels.WHISPER_1.getValue();
 
-	private static final Double DEFAULT_TEMPERATURE = 0.7;
+	public static final String DEFAULT_TRANSCRIPTION_PATH = "/v1/audio/transcriptions";
 
 	private static final OpenAiAudioApi.TranscriptResponseFormat DEFAULT_RESPONSE_FORMAT = OpenAiAudioApi.TranscriptResponseFormat.TEXT;
 
+	private String transcriptionPath = DEFAULT_TRANSCRIPTION_PATH;
+
 	@NestedConfigurationProperty
-	private OpenAiAudioTranscriptionOptions options = OpenAiAudioTranscriptionOptions.builder()
+	private final OpenAiAudioTranscriptionOptions options = OpenAiAudioTranscriptionOptions.builder()
 		.model(DEFAULT_TRANSCRIPTION_MODEL)
-		.temperature(DEFAULT_TEMPERATURE.floatValue())
 		.responseFormat(DEFAULT_RESPONSE_FORMAT)
 		.build();
 
-	public OpenAiAudioTranscriptionOptions getOptions() {
-		return this.options;
+	public String getTranscriptionPath() {
+		return this.transcriptionPath;
 	}
 
-	public void setOptions(OpenAiAudioTranscriptionOptions options) {
-		this.options = options;
+	public void setTranscriptionPath(String transcriptionPath) {
+		this.transcriptionPath = transcriptionPath;
+	}
+
+	public OpenAiAudioTranscriptionOptions getOptions() {
+		return this.options;
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import org.springframework.ai.integration.tests.TestApplication;
 import org.springframework.ai.integration.tests.tool.domain.Author;
 import org.springframework.ai.integration.tests.tool.domain.Book;
 import org.springframework.ai.integration.tests.tool.domain.BookService;
-import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openaisdk.OpenAiSdkChatModel;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.method.MethodToolCallback;
@@ -44,12 +44,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Thomas Vitale
  */
 @SpringBootTest(classes = TestApplication.class)
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".*")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class MethodToolCallbackTests {
 
 	@Autowired
-	OpenAiChatModel openAiChatModel;
+	OpenAiSdkChatModel openAiChatModel;
 
 	Tools tools = new Tools(new BookService());
 

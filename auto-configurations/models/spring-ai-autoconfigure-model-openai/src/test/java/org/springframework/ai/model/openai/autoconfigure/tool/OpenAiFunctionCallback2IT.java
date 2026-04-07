@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,18 +25,22 @@ import org.slf4j.LoggerFactory;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.model.openai.autoconfigure.OpenAiChatAutoConfiguration;
+import org.springframework.ai.model.tool.autoconfigure.ToolCallingAutoConfiguration;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.api.OpenAiApi.ChatModel;
+import org.springframework.ai.retry.autoconfigure.SpringAiRetryAutoConfiguration;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.restclient.autoconfigure.RestClientAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.webclient.autoconfigure.WebClientAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".*")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 public class OpenAiFunctionCallback2IT {
 
 	private final Logger logger = LoggerFactory.getLogger(OpenAiFunctionCallback2IT.class);
@@ -44,7 +48,9 @@ public class OpenAiFunctionCallback2IT {
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
 		.withPropertyValues("spring.ai.openai.apiKey=" + System.getenv("OPENAI_API_KEY"),
 				"spring.ai.openai.chat.options.model=" + ChatModel.GPT_4_O_MINI.getName())
-		.withConfiguration(AutoConfigurations.of(OpenAiChatAutoConfiguration.class))
+		.withConfiguration(AutoConfigurations.of(OpenAiChatAutoConfiguration.class, RestClientAutoConfiguration.class,
+				SpringAiRetryAutoConfiguration.class, ToolCallingAutoConfiguration.class,
+				WebClientAutoConfiguration.class))
 		.withUserConfiguration(Config.class);
 
 	@Test

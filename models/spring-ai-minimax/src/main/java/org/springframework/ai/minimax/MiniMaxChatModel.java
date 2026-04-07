@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,10 +65,11 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionEligibilityPredicate;
 import org.springframework.ai.model.tool.ToolExecutionResult;
+import org.springframework.ai.model.tool.internal.ToolCallReactiveContextHolder;
 import org.springframework.ai.retry.RetryUtils;
 import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.core.retry.RetryTemplate;
 import org.springframework.http.ResponseEntity;
-import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 
@@ -225,7 +226,11 @@ public class MiniMaxChatModel implements ChatModel {
 						acc1.addAll(acc2);
 						return acc1;
 					});
-		var assistantMessage = new AssistantMessage(choice.message().content(), metadata, toolCalls);
+		var assistantMessage = AssistantMessage.builder()
+			.content(choice.message().content())
+			.properties(metadata)
+			.toolCalls(toolCalls)
+			.build();
 		String finishReason = (choice.finishReason() != null ? choice.finishReason().name() : "");
 		var generationMetadata = ChatGenerationMetadata.builder().finishReason(finishReason).build();
 		return new Generation(assistantMessage, generationMetadata);
@@ -233,8 +238,6 @@ public class MiniMaxChatModel implements ChatModel {
 
 	@Override
 	public ChatResponse call(Prompt prompt) {
-		// Before moving any further, build the final request Prompt,
-		// merging runtime and default options.
 		Prompt requestPrompt = buildRequestPrompt(prompt);
 		ChatCompletionRequest request = createRequest(requestPrompt, false);
 
@@ -248,8 +251,8 @@ public class MiniMaxChatModel implements ChatModel {
 					this.observationRegistry)
 			.observe(() -> {
 
-				ResponseEntity<ChatCompletion> completionEntity = this.retryTemplate
-					.execute(ctx -> this.miniMaxApi.chatCompletionEntity(request));
+				ResponseEntity<ChatCompletion> completionEntity = RetryUtils.execute(this.retryTemplate,
+						() -> this.miniMaxApi.chatCompletionEntity(request));
 
 				var chatCompletion = completionEntity.getBody();
 
@@ -323,8 +326,8 @@ public class MiniMaxChatModel implements ChatModel {
 		return Flux.deferContextual(contextView -> {
 			ChatCompletionRequest request = createRequest(requestPrompt, true);
 
-			Flux<ChatCompletionChunk> completionChunks = this.retryTemplate
-				.execute(ctx -> this.miniMaxApi.chatCompletionStream(request));
+			Flux<ChatCompletionChunk> completionChunks = RetryUtils.execute(this.retryTemplate,
+					() -> this.miniMaxApi.chatCompletionStream(request));
 
 			// For chunked responses, only the first chunk contains the choice role.
 			// The rest of the chunks with same ID share the same role.
@@ -370,10 +373,17 @@ public class MiniMaxChatModel implements ChatModel {
 
 			Flux<ChatResponse> flux = chatResponse.flatMap(response -> {
 						if (this.toolExecutionEligibilityPredicate.isToolExecutionRequired(requestPrompt.getOptions(), response)) {
-							return Flux.defer(() -> {
-								// FIXME: bounded elastic needs to be used since tool calling
-								//  is currently only synchronous
-								var toolExecutionResult = this.toolCallingManager.executeToolCalls(requestPrompt, response);
+							// FIXME: bounded elastic needs to be used since tool calling
+							//  is currently only synchronous
+							return Flux.deferContextual(ctx -> {
+								ToolExecutionResult toolExecutionResult;
+								try {
+									ToolCallReactiveContextHolder.setContext(ctx);
+									toolExecutionResult = this.toolCallingManager.executeToolCalls(prompt, response);
+								}
+								finally {
+									ToolCallReactiveContextHolder.clearContext();
+								}
 								if (toolExecutionResult.returnDirect()) {
 									// Return tool execution result directly to the client.
 									return Flux.just(ChatResponse.builder().from(response)
@@ -424,7 +434,11 @@ public class MiniMaxChatModel implements ChatModel {
 							toolCall.function().name(), toolCall.function().arguments()))
 					.toList();
 
-		var assistantMessage = new AssistantMessage(message.content(), metadata, toolCalls);
+		var assistantMessage = AssistantMessage.builder()
+			.content(message.content())
+			.properties(metadata)
+			.toolCalls(toolCalls)
+			.build();
 		String finishReason = (completionFinishReason != null ? completionFinishReason.name() : "");
 		var generationMetadata = ChatGenerationMetadata.builder().finishReason(finishReason).build();
 		return new Generation(assistantMessage, generationMetadata);
@@ -450,45 +464,12 @@ public class MiniMaxChatModel implements ChatModel {
 
 	Prompt buildRequestPrompt(Prompt prompt) {
 		// Process runtime options
-		MiniMaxChatOptions runtimeOptions = null;
-		if (prompt.getOptions() != null) {
-			if (prompt.getOptions() instanceof ToolCallingChatOptions toolCallingChatOptions) {
-				runtimeOptions = ModelOptionsUtils.copyToTarget(toolCallingChatOptions, ToolCallingChatOptions.class,
-						MiniMaxChatOptions.class);
-			}
-			else {
-				runtimeOptions = ModelOptionsUtils.copyToTarget(prompt.getOptions(), ChatOptions.class,
-						MiniMaxChatOptions.class);
-			}
-		}
+		MiniMaxChatOptions runtimeOptions = (MiniMaxChatOptions) prompt.getOptions();
+		runtimeOptions = runtimeOptions == null ? this.defaultOptions : runtimeOptions;
 
-		// Define request options by merging runtime options and default options
-		MiniMaxChatOptions requestOptions = ModelOptionsUtils.merge(runtimeOptions, this.defaultOptions,
-				MiniMaxChatOptions.class);
+		ToolCallingChatOptions.validateToolCallbacks(runtimeOptions.getToolCallbacks());
 
-		// Merge @JsonIgnore-annotated options explicitly since they are ignored by
-		// Jackson, used by ModelOptionsUtils.
-		if (runtimeOptions != null) {
-			requestOptions.setInternalToolExecutionEnabled(
-					ModelOptionsUtils.mergeOption(runtimeOptions.getInternalToolExecutionEnabled(),
-							this.defaultOptions.getInternalToolExecutionEnabled()));
-			requestOptions.setToolNames(ToolCallingChatOptions.mergeToolNames(runtimeOptions.getToolNames(),
-					this.defaultOptions.getToolNames()));
-			requestOptions.setToolCallbacks(ToolCallingChatOptions.mergeToolCallbacks(runtimeOptions.getToolCallbacks(),
-					this.defaultOptions.getToolCallbacks()));
-			requestOptions.setToolContext(ToolCallingChatOptions.mergeToolContext(runtimeOptions.getToolContext(),
-					this.defaultOptions.getToolContext()));
-		}
-		else {
-			requestOptions.setInternalToolExecutionEnabled(this.defaultOptions.getInternalToolExecutionEnabled());
-			requestOptions.setToolNames(this.defaultOptions.getToolNames());
-			requestOptions.setToolCallbacks(this.defaultOptions.getToolCallbacks());
-			requestOptions.setToolContext(this.defaultOptions.getToolContext());
-		}
-
-		ToolCallingChatOptions.validateToolCallbacks(requestOptions.getToolCallbacks());
-
-		return new Prompt(prompt.getInstructions(), requestOptions);
+		return prompt.mutate().chatOptions(runtimeOptions).build();
 	}
 
 	/**

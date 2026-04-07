@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import org.springframework.ai.integration.tests.TestApplication;
 import org.springframework.ai.integration.tests.tool.domain.Author;
 import org.springframework.ai.integration.tests.tool.domain.Book;
 import org.springframework.ai.integration.tests.tool.domain.BookService;
-import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openaisdk.OpenAiSdkChatModel;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(classes = TestApplication.class)
 @Import(FunctionToolCallbackTests.Tools.class)
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".*")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class FunctionToolCallbackTests {
 
@@ -58,7 +58,7 @@ public class FunctionToolCallbackTests {
 	private static final Logger logger = LoggerFactory.getLogger(FunctionToolCallbackTests.class);
 
 	@Autowired
-	OpenAiChatModel openAiChatModel;
+	OpenAiSdkChatModel openAiChatModel;
 
 	@Test
 	void chatVoidInputFromBean() {

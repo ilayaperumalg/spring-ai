@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.ai.vectorstore.neo4j.autoconfigure;
 
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.ai.vectorstore.neo4j.Neo4jVectorStore;
 import org.springframework.ai.vectorstore.properties.CommonVectorStoreProperties;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -31,9 +33,9 @@ public class Neo4jVectorStoreProperties extends CommonVectorStoreProperties {
 
 	public static final String CONFIG_PREFIX = "spring.ai.vectorstore.neo4j";
 
-	private String databaseName;
+	private @Nullable String databaseName;
 
-	private int embeddingDimension = Neo4jVectorStore.DEFAULT_EMBEDDING_DIMENSION;
+	private @Nullable Integer embeddingDimension;
 
 	private Neo4jVectorStore.Neo4jDistanceType distanceType = Neo4jVectorStore.Neo4jDistanceType.COSINE;
 
@@ -47,19 +49,21 @@ public class Neo4jVectorStoreProperties extends CommonVectorStoreProperties {
 
 	private String constraintName = Neo4jVectorStore.DEFAULT_CONSTRAINT_NAME;
 
-	public String getDatabaseName() {
+	private String textProperty = Neo4jVectorStore.DEFAULT_TEXT_PROPERTY;
+
+	public @Nullable String getDatabaseName() {
 		return this.databaseName;
 	}
 
-	public void setDatabaseName(String databaseName) {
+	public void setDatabaseName(@Nullable String databaseName) {
 		this.databaseName = databaseName;
 	}
 
-	public int getEmbeddingDimension() {
+	public @Nullable Integer getEmbeddingDimension() {
 		return this.embeddingDimension;
 	}
 
-	public void setEmbeddingDimension(int embeddingDimension) {
+	public void setEmbeddingDimension(@Nullable Integer embeddingDimension) {
 		this.embeddingDimension = embeddingDimension;
 	}
 
@@ -109,6 +113,14 @@ public class Neo4jVectorStoreProperties extends CommonVectorStoreProperties {
 
 	public void setConstraintName(String constraintName) {
 		this.constraintName = constraintName;
+	}
+
+	public String getTextProperty() {
+		return this.textProperty;
+	}
+
+	public void setTextProperty(String textProperty) {
+		this.textProperty = textProperty;
 	}
 
 }

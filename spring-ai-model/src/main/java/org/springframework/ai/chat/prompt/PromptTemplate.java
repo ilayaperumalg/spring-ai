@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,21 +24,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Set;
 
-import org.springframework.ai.template.TemplateRenderer;
-import org.springframework.ai.template.st.StTemplateRenderer;
-import org.springframework.util.Assert;
+import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.content.Media;
-import org.springframework.core.io.Resource;
+import org.springframework.ai.template.TemplateRenderer;
+import org.springframework.ai.template.st.StTemplateRenderer;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.util.Assert;
 import org.springframework.util.StreamUtils;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A template for creating prompts. It allows you to define a template string with
@@ -56,7 +55,7 @@ public class PromptTemplate implements PromptTemplateActions, PromptTemplateMess
 	 * together with the new PromptTemplateRenderer interface, designed to give you more
 	 * flexibility and control over the rendering process.
 	 */
-	private String template;
+	private final String template;
 
 	private final Map<String, Object> variables = new HashMap<>();
 
@@ -89,7 +88,7 @@ public class PromptTemplate implements PromptTemplateActions, PromptTemplateMess
 
 		try (InputStream inputStream = resource.getInputStream()) {
 			this.template = StreamUtils.copyToString(inputStream, Charset.defaultCharset());
-			Assert.hasText(template, "template cannot be null or empty");
+			Assert.hasText(this.template, "template cannot be null or empty");
 		}
 		catch (IOException ex) {
 			throw new RuntimeException("Failed to read resource", ex);
@@ -111,32 +110,37 @@ public class PromptTemplate implements PromptTemplateActions, PromptTemplateMess
 	@Override
 	public String render() {
 		// Process internal variables to handle Resources before rendering
-		Map<String, Object> processedVariables = new HashMap<>();
+		Map<String, @Nullable Object> processedVariables = new HashMap<>();
 		for (Entry<String, Object> entry : this.variables.entrySet()) {
-			if (entry.getValue() instanceof Resource) {
-				processedVariables.put(entry.getKey(), renderResource((Resource) entry.getValue()));
+			if (entry.getValue() instanceof Resource resource) {
+				processedVariables.put(entry.getKey(), renderResource(resource));
 			}
 			else {
 				processedVariables.put(entry.getKey(), entry.getValue());
 			}
 		}
-		return this.renderer.apply(template, processedVariables);
+		return this.renderer.apply(this.template, processedVariables);
 	}
 
 	@Override
 	public String render(Map<String, Object> additionalVariables) {
-		Map<String, Object> combinedVariables = new HashMap<>(this.variables);
+		Map<String, @Nullable Object> combinedVariables = new HashMap<>();
+		Map<String, Object> mergedVariables = new HashMap<>(this.variables);
+		// variables + additionalVariables => mergedVariables
+		if (additionalVariables != null && !additionalVariables.isEmpty()) {
+			mergedVariables.putAll(additionalVariables);
+		}
 
-		for (Entry<String, Object> entry : additionalVariables.entrySet()) {
-			if (entry.getValue() instanceof Resource) {
-				combinedVariables.put(entry.getKey(), renderResource((Resource) entry.getValue()));
+		for (Entry<String, Object> entry : mergedVariables.entrySet()) {
+			if (entry.getValue() instanceof Resource resource) {
+				combinedVariables.put(entry.getKey(), renderResource(resource));
 			}
 			else {
 				combinedVariables.put(entry.getKey(), entry.getValue());
 			}
 		}
 
-		return this.renderer.apply(template, combinedVariables);
+		return this.renderer.apply(this.template, combinedVariables);
 	}
 
 	private String renderResource(Resource resource) {
@@ -213,15 +217,15 @@ public class PromptTemplate implements PromptTemplateActions, PromptTemplateMess
 
 	public static class Builder {
 
-		private String template;
+		protected @Nullable String template;
 
-		private Resource resource;
+		protected @Nullable Resource resource;
 
-		private Map<String, Object> variables = new HashMap<>();
+		protected Map<String, Object> variables = new HashMap<>();
 
-		private TemplateRenderer renderer = DEFAULT_TEMPLATE_RENDERER;
+		protected TemplateRenderer renderer = DEFAULT_TEMPLATE_RENDERER;
 
-		private Builder() {
+		protected Builder() {
 		}
 
 		public Builder template(String template) {
@@ -256,8 +260,11 @@ public class PromptTemplate implements PromptTemplateActions, PromptTemplateMess
 			else if (this.resource != null) {
 				return new PromptTemplate(this.resource, this.variables, this.renderer);
 			}
-			else {
+			else if (this.template != null) {
 				return new PromptTemplate(this.template, this.variables, this.renderer);
+			}
+			else {
+				throw new IllegalStateException("Neither template nor resource is set");
 			}
 		}
 

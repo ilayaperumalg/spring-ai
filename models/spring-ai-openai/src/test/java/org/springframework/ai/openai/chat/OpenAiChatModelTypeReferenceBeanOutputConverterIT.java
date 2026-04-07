@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.ai.openai.chat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
@@ -49,7 +50,7 @@ class OpenAiChatModelTypeReferenceBeanOutputConverterIT extends AbstractIT {
 	void typeRefOutputConverterRecords() {
 
 		BeanOutputConverter<List<ActorsFilmsRecord>> outputConverter = new BeanOutputConverter<>(
-				new ParameterizedTypeReference<List<ActorsFilmsRecord>>() {
+				new ParameterizedTypeReference<>() {
 
 				});
 
@@ -78,7 +79,7 @@ class OpenAiChatModelTypeReferenceBeanOutputConverterIT extends AbstractIT {
 	void typeRefStreamOutputConverterRecords() {
 
 		BeanOutputConverter<List<ActorsFilmsRecord>> outputConverter = new BeanOutputConverter<>(
-				new ParameterizedTypeReference<List<ActorsFilmsRecord>>() {
+				new ParameterizedTypeReference<>() {
 
 				});
 
@@ -101,6 +102,7 @@ class OpenAiChatModelTypeReferenceBeanOutputConverterIT extends AbstractIT {
 			.flatMap(List::stream)
 			.map(Generation::getOutput)
 			.map(AssistantMessage::getText)
+			.filter(Objects::nonNull)
 			.collect(Collectors.joining());
 
 		List<ActorsFilmsRecord> actorsFilms = outputConverter.convert(generationTextFromStream);

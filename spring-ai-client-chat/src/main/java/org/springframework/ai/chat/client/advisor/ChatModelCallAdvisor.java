@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@
 
 package org.springframework.ai.chat.client.advisor;
 
+import java.util.Map;
+
+import org.jspecify.annotations.Nullable;
+
 import org.springframework.ai.chat.client.ChatClientAttributes;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
@@ -24,16 +28,16 @@ import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.StructuredOutputChatOptions;
 import org.springframework.core.Ordered;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
-
-import java.util.Map;
 
 /**
  * A {@link CallAdvisor} that uses a {@link ChatModel} to generate a response.
  *
  * @author Thomas Vitale
+ * @author Christian Tzolov
  * @since 1.0.0
  */
 public final class ChatModelCallAdvisor implements CallAdvisor {
@@ -51,7 +55,8 @@ public final class ChatModelCallAdvisor implements CallAdvisor {
 
 		ChatClientRequest formattedChatClientRequest = augmentWithFormatInstructions(chatClientRequest);
 
-		ChatResponse chatResponse = chatModel.call(formattedChatClientRequest.prompt());
+		ChatResponse chatResponse = this.chatModel.call(formattedChatClientRequest.prompt());
+
 		return ChatClientResponse.builder()
 			.chatResponse(chatResponse)
 			.context(Map.copyOf(formattedChatClientRequest.context()))
@@ -59,9 +64,22 @@ public final class ChatModelCallAdvisor implements CallAdvisor {
 	}
 
 	private static ChatClientRequest augmentWithFormatInstructions(ChatClientRequest chatClientRequest) {
+
 		String outputFormat = (String) chatClientRequest.context().get(ChatClientAttributes.OUTPUT_FORMAT.getKey());
 
-		if (!StringUtils.hasText(outputFormat)) {
+		String outputSchema = (String) chatClientRequest.context()
+			.get(ChatClientAttributes.STRUCTURED_OUTPUT_SCHEMA.getKey());
+
+		if (!StringUtils.hasText(outputFormat) && !StringUtils.hasText(outputSchema)) {
+			return chatClientRequest;
+		}
+
+		if (chatClientRequest.context().containsKey(ChatClientAttributes.STRUCTURED_OUTPUT_NATIVE.getKey())
+				&& StringUtils.hasText(outputSchema) && chatClientRequest.prompt()
+					.getOptions() instanceof StructuredOutputChatOptions structuredOutputChatOptions) {
+
+			structuredOutputChatOptions.setOutputSchema(outputSchema);
+
 			return chatClientRequest;
 		}
 
@@ -90,9 +108,9 @@ public final class ChatModelCallAdvisor implements CallAdvisor {
 		return new Builder();
 	}
 
-	public static class Builder {
+	public static final class Builder {
 
-		private ChatModel chatModel;
+		private @Nullable ChatModel chatModel;
 
 		private Builder() {
 		}
@@ -103,6 +121,7 @@ public final class ChatModelCallAdvisor implements CallAdvisor {
 		}
 
 		public ChatModelCallAdvisor build() {
+			Assert.state(this.chatModel != null, "chatModel cannot be null");
 			return new ChatModelCallAdvisor(this.chatModel);
 		}
 

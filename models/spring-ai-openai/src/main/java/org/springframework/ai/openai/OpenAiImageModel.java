@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,8 +38,8 @@ import org.springframework.ai.openai.api.OpenAiImageApi;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
 import org.springframework.ai.openai.metadata.OpenAiImageGenerationMetadata;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.core.retry.RetryTemplate;
 import org.springframework.http.ResponseEntity;
-import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 
 /**
@@ -141,8 +141,8 @@ public class OpenAiImageModel implements ImageModel {
 			.observation(this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
 					this.observationRegistry)
 			.observe(() -> {
-				ResponseEntity<OpenAiImageApi.OpenAiImageResponse> imageResponseEntity = this.retryTemplate
-					.execute(ctx -> this.openAiImageApi.createImage(imageRequest));
+				ResponseEntity<OpenAiImageApi.OpenAiImageResponse> imageResponseEntity = RetryUtils
+					.execute(this.retryTemplate, () -> this.openAiImageApi.createImage(imageRequest));
 
 				ImageResponse imageResponse = convertResponse(imageResponseEntity, imageRequest);
 

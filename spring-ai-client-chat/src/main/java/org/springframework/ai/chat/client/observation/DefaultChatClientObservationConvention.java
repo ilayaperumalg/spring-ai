@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,13 @@ import java.util.ArrayList;
 import io.micrometer.common.KeyValue;
 import io.micrometer.common.KeyValues;
 
-import org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.client.observation.ChatClientObservationDocumentation.LowCardinalityKeyNames;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.observation.ChatModelObservationDocumentation;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.observation.ObservabilityHelper;
 import org.springframework.ai.observation.conventions.SpringAiKind;
-import org.springframework.ai.observation.tracing.TracingHelper;
-import org.springframework.lang.Nullable;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -59,7 +58,6 @@ public class DefaultChatClientObservationConvention implements ChatClientObserva
 	}
 
 	@Override
-	@Nullable
 	public String getContextualName(ChatClientObservationContext context) {
 		return "%s %s".formatted(context.getOperationMetadata().provider(), SpringAiKind.CHAT_CLIENT.value());
 	}
@@ -103,7 +101,7 @@ public class DefaultChatClientObservationConvention implements ChatClientObserva
 		}
 		var advisorNames = context.getAdvisors().stream().map(Advisor::getName).toList();
 		return keyValues.and(ChatClientObservationDocumentation.HighCardinalityKeyNames.CHAT_CLIENT_ADVISORS.asString(),
-				TracingHelper.concatenateStrings(advisorNames));
+				ObservabilityHelper.concatenateStrings(advisorNames));
 	}
 
 	protected KeyValues conversationId(KeyValues keyValues, ChatClientObservationContext context) {
@@ -111,9 +109,7 @@ public class DefaultChatClientObservationConvention implements ChatClientObserva
 			return keyValues;
 		}
 
-		var conversationIdValue = context.getRequest()
-			.context()
-			.get(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY);
+		var conversationIdValue = context.getRequest().context().get(ChatMemory.CONVERSATION_ID);
 
 		if (!(conversationIdValue instanceof String conversationId) || !StringUtils.hasText(conversationId)) {
 			return keyValues;
@@ -143,7 +139,7 @@ public class DefaultChatClientObservationConvention implements ChatClientObserva
 
 		return keyValues.and(
 				ChatClientObservationDocumentation.HighCardinalityKeyNames.CHAT_CLIENT_TOOL_NAMES.asString(),
-				TracingHelper.concatenateStrings(toolNames.stream().sorted().toList()));
+				ObservabilityHelper.concatenateStrings(toolNames.stream().sorted().toList()));
 	}
 
 }

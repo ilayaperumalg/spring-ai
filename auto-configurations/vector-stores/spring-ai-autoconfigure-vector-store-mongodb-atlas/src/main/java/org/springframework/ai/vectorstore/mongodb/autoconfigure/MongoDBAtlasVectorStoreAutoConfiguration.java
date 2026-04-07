@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ import org.springframework.util.MimeType;
 public class MongoDBAtlasVectorStoreAutoConfiguration {
 
 	@Bean
-	@ConditionalOnMissingBean(BatchingStrategy.class)
+	@ConditionalOnMissingBean
 	BatchingStrategy batchingStrategy() {
 		return new TokenCountBatchingStrategy();
 	}
@@ -73,7 +73,7 @@ public class MongoDBAtlasVectorStoreAutoConfiguration {
 		MongoDBAtlasVectorStore.Builder builder = MongoDBAtlasVectorStore.builder(mongoTemplate, embeddingModel)
 			.initializeSchema(properties.isInitializeSchema())
 			.observationRegistry(observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP))
-			.customObservationConvention(customObservationConvention.getIfAvailable(() -> null))
+			.customObservationConvention(customObservationConvention.getIfAvailable())
 			.batchingStrategy(batchingStrategy);
 
 		PropertyMapper mapper = PropertyMapper.get();
@@ -91,7 +91,7 @@ public class MongoDBAtlasVectorStoreAutoConfiguration {
 
 	@Bean
 	public Converter<MimeType, String> mimeTypeToStringConverter() {
-		return new Converter<MimeType, String>() {
+		return new Converter<>() {
 
 			@Override
 			public String convert(MimeType source) {
@@ -102,7 +102,7 @@ public class MongoDBAtlasVectorStoreAutoConfiguration {
 
 	@Bean
 	public Converter<String, MimeType> stringToMimeTypeConverter() {
-		return new Converter<String, MimeType>() {
+		return new Converter<>() {
 
 			@Override
 			public MimeType convert(String source) {

@@ -12,7 +12,7 @@ You can browse all the https://huggingface.co/models?library=sentence-transforme
 == Add Repositories and BOM
 
 Spring AI artifacts are published in Maven Central and Spring Snapshot repositories.
-Refer to the xref:getting-started.adoc#repositories[Repositories] section to add these repositories to your build system.
+Refer to the xref:getting-started.adoc#artifact-repositories[Artifact Repositories] section to add these repositories to your build system.
 
 To help with dependency management, Spring AI provides a BOM (bill of materials) to ensure that a consistent version of Spring AI is used throughout the entire project. Refer to the xref:getting-started.adoc#dependency-management[Dependency Management] section to add the Spring AI BOM to your build system.
 
@@ -69,7 +69,7 @@ The prefix `spring.ai.postgresml.embedding` is property prefix that configures t
 | Property | Description | Default
 | spring.ai.postgresml.embedding.enabled (Removed and no longer valid) | Enable PostgresML embedding model.  | true
 | spring.ai.model.embedding | Enable PostgresML embedding model.  | postgresml
-| spring.ai.postgresml.embedding.create-extension | Execute the SQL 'CREATE EXTENSION IF NOT EXISTS pgml' to enable the extesnion | false
+| spring.ai.postgresml.embedding.create-extension | Execute the SQL 'CREATE EXTENSION IF NOT EXISTS pgml' to enable the extension | false
 | spring.ai.postgresml.embedding.options.transformer  | The Hugging Face transformer model to use for the embedding.  | distilbert-base-uncased
 | spring.ai.postgresml.embedding.options.kwargs   | Additional transformer specific options.  | empty map
 | spring.ai.postgresml.embedding.options.vectorType   | PostgresML vector type to use for the embedding. Two options are supported: `PG_ARRAY` and `PG_VECTOR`. | PG_ARRAY

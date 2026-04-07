@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,15 @@
 
 package org.springframework.ai.chat.observation;
 
-import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.StringJoiner;
 
 import io.micrometer.common.KeyValue;
 import io.micrometer.common.KeyValues;
 
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -51,7 +53,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 	@Override
 	public String getContextualName(ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (StringUtils.hasText(options.getModel())) {
+		if (options != null && StringUtils.hasText(options.getModel())) {
 			return "%s %s".formatted(context.getOperationMetadata().operationType(), options.getModel());
 		}
 		return context.getOperationMetadata().operationType();
@@ -75,7 +77,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValue requestModel(ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (StringUtils.hasText(options.getModel())) {
+		if (options != null && StringUtils.hasText(options.getModel())) {
 			return KeyValue.of(ChatModelObservationDocumentation.LowCardinalityKeyNames.REQUEST_MODEL,
 					options.getModel());
 		}
@@ -100,6 +102,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 		keyValues = requestPresencePenalty(keyValues, context);
 		keyValues = requestStopSequences(keyValues, context);
 		keyValues = requestTemperature(keyValues, context);
+		keyValues = requestTools(keyValues, context);
 		keyValues = requestTopK(keyValues, context);
 		keyValues = requestTopP(keyValues, context);
 		// Response
@@ -115,7 +118,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValues requestFrequencyPenalty(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (options.getFrequencyPenalty() != null) {
+		if (options != null && options.getFrequencyPenalty() != null) {
 			return keyValues.and(
 					ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_FREQUENCY_PENALTY.asString(),
 					String.valueOf(options.getFrequencyPenalty()));
@@ -125,7 +128,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValues requestMaxTokens(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (options.getMaxTokens() != null) {
+		if (options != null && options.getMaxTokens() != null) {
 			return keyValues.and(
 					ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_MAX_TOKENS.asString(),
 					String.valueOf(options.getMaxTokens()));
@@ -135,7 +138,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValues requestPresencePenalty(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (options.getPresencePenalty() != null) {
+		if (options != null && options.getPresencePenalty() != null) {
 			return keyValues.and(
 					ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_PRESENCE_PENALTY.asString(),
 					String.valueOf(options.getPresencePenalty()));
@@ -145,11 +148,9 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValues requestStopSequences(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (!CollectionUtils.isEmpty(options.getStopSequences())) {
+		if (options != null && !CollectionUtils.isEmpty(options.getStopSequences())) {
 			StringJoiner stopSequencesJoiner = new StringJoiner(", ", "[", "]");
 			options.getStopSequences().forEach(value -> stopSequencesJoiner.add("\"" + value + "\""));
-			KeyValue.of(ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_STOP_SEQUENCES,
-					options.getStopSequences(), Objects::nonNull);
 			return keyValues.and(
 					ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_STOP_SEQUENCES.asString(),
 					stopSequencesJoiner.toString());
@@ -159,7 +160,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValues requestTemperature(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (options.getTemperature() != null) {
+		if (options != null && options.getTemperature() != null) {
 			return keyValues.and(
 					ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_TEMPERATURE.asString(),
 					String.valueOf(options.getTemperature()));
@@ -167,9 +168,27 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 		return keyValues;
 	}
 
+	protected KeyValues requestTools(KeyValues keyValues, ChatModelObservationContext context) {
+		if (!(context.getRequest().getOptions() instanceof ToolCallingChatOptions options)) {
+			return keyValues;
+		}
+
+		Set<String> toolNames = new HashSet<>(options.getToolNames());
+		toolNames.addAll(options.getToolCallbacks().stream().map(tc -> tc.getToolDefinition().name()).toList());
+
+		if (!CollectionUtils.isEmpty(toolNames)) {
+			StringJoiner toolNamesJoiner = new StringJoiner(", ", "[", "]");
+			toolNames.forEach(value -> toolNamesJoiner.add("\"" + value + "\""));
+			return keyValues.and(
+					ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_TOOL_NAMES.asString(),
+					toolNamesJoiner.toString());
+		}
+		return keyValues;
+	}
+
 	protected KeyValues requestTopK(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (options.getTopK() != null) {
+		if (options != null && options.getTopK() != null) {
 			return keyValues.and(ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_TOP_K.asString(),
 					String.valueOf(options.getTopK()));
 		}
@@ -178,7 +197,7 @@ public class DefaultChatModelObservationConvention implements ChatModelObservati
 
 	protected KeyValues requestTopP(KeyValues keyValues, ChatModelObservationContext context) {
 		ChatOptions options = context.getRequest().getOptions();
-		if (options.getTopP() != null) {
+		if (options != null && options.getTopP() != null) {
 			return keyValues.and(ChatModelObservationDocumentation.HighCardinalityKeyNames.REQUEST_TOP_P.asString(),
 					String.valueOf(options.getTopP()));
 		}

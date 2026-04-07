@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@
 package org.springframework.ai.tool.method;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -35,6 +37,7 @@ import org.springframework.ai.tool.metadata.ToolMetadata;
 import org.springframework.ai.tool.support.ToolDefinitions;
 import org.springframework.ai.tool.support.ToolUtils;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
@@ -67,7 +70,7 @@ public final class MethodToolCallbackProvider implements ToolCallbackProvider {
 			List<Method> toolMethods = Stream
 				.of(ReflectionUtils.getDeclaredMethods(
 						AopUtils.isAopProxy(toolObject) ? AopUtils.getTargetClass(toolObject) : toolObject.getClass()))
-				.filter(toolMethod -> toolMethod.isAnnotationPresent(Tool.class))
+				.filter(this::isToolAnnotatedMethod)
 				.filter(toolMethod -> !isFunctionalType(toolMethod))
 				.toList();
 
@@ -84,8 +87,9 @@ public final class MethodToolCallbackProvider implements ToolCallbackProvider {
 			.map(toolObject -> Stream
 				.of(ReflectionUtils.getDeclaredMethods(
 						AopUtils.isAopProxy(toolObject) ? AopUtils.getTargetClass(toolObject) : toolObject.getClass()))
-				.filter(toolMethod -> toolMethod.isAnnotationPresent(Tool.class))
+				.filter(this::isToolAnnotatedMethod)
 				.filter(toolMethod -> !isFunctionalType(toolMethod))
+				.filter(ReflectionUtils.USER_DECLARED_METHODS::matches)
 				.map(toolMethod -> MethodToolCallback.builder()
 					.toolDefinition(ToolDefinitions.from(toolMethod))
 					.toolMetadata(ToolMetadata.from(toolMethod))
@@ -103,9 +107,9 @@ public final class MethodToolCallbackProvider implements ToolCallbackProvider {
 	}
 
 	private boolean isFunctionalType(Method toolMethod) {
-		var isFunction = ClassUtils.isAssignable(toolMethod.getReturnType(), Function.class)
-				|| ClassUtils.isAssignable(toolMethod.getReturnType(), Supplier.class)
-				|| ClassUtils.isAssignable(toolMethod.getReturnType(), Consumer.class);
+		var isFunction = ClassUtils.isAssignable(Function.class, toolMethod.getReturnType())
+				|| ClassUtils.isAssignable(Supplier.class, toolMethod.getReturnType())
+				|| ClassUtils.isAssignable(Consumer.class, toolMethod.getReturnType());
 
 		if (isFunction) {
 			logger.warn("Method {} is annotated with @Tool but returns a functional type. "
@@ -113,6 +117,11 @@ public final class MethodToolCallbackProvider implements ToolCallbackProvider {
 		}
 
 		return isFunction;
+	}
+
+	private boolean isToolAnnotatedMethod(Method method) {
+		Tool annotation = AnnotationUtils.findAnnotation(method, Tool.class);
+		return Objects.nonNull(annotation);
 	}
 
 	private void validateToolCallbacks(ToolCallback[] toolCallbacks) {
@@ -130,7 +139,7 @@ public final class MethodToolCallbackProvider implements ToolCallbackProvider {
 
 	public static final class Builder {
 
-		private List<Object> toolObjects;
+		private List<Object> toolObjects = new ArrayList<>();
 
 		private Builder() {
 		}

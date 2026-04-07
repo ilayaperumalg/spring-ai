@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.evaluation.RelevancyEvaluator;
+import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.document.Document;
@@ -34,7 +34,7 @@ import org.springframework.ai.document.DocumentReader;
 import org.springframework.ai.evaluation.EvaluationRequest;
 import org.springframework.ai.evaluation.EvaluationResponse;
 import org.springframework.ai.integration.tests.TestApplication;
-import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openaisdk.OpenAiSdkChatModel;
 import org.springframework.ai.rag.advisor.RetrievalAugmentationAdvisor;
 import org.springframework.ai.rag.preretrieval.query.expansion.MultiQueryExpander;
 import org.springframework.ai.rag.preretrieval.query.transformation.CompressionQueryTransformer;
@@ -57,13 +57,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @author Thomas Vitale
  */
 @SpringBootTest(classes = TestApplication.class)
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".*")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 class RetrievalAugmentationAdvisorIT {
 
 	private List<Document> knowledgeBaseDocuments;
 
 	@Autowired
-	OpenAiChatModel openAiChatModel;
+	OpenAiSdkChatModel openAiChatModel;
 
 	@Autowired
 	PgVectorStore pgVectorStore;
@@ -152,8 +152,7 @@ class RetrievalAugmentationAdvisorIT {
 
 		ChatResponse chatResponse1 = chatClient.prompt()
 			.user("Where does the adventure of Anacletus and Birba take place?")
-			.advisors(advisors -> advisors.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY,
-					conversationId))
+			.advisors(advisors -> advisors.param(ChatMemory.CONVERSATION_ID, conversationId))
 			.call()
 			.chatResponse();
 
@@ -163,8 +162,7 @@ class RetrievalAugmentationAdvisorIT {
 
 		ChatResponse chatResponse2 = chatClient.prompt()
 			.user("Did they meet any cow?")
-			.advisors(advisors -> advisors.param(AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY,
-					conversationId))
+			.advisors(advisors -> advisors.param(ChatMemory.CONVERSATION_ID, conversationId))
 			.call()
 			.chatResponse();
 

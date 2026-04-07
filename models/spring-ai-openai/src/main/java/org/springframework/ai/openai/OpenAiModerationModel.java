@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,8 +34,8 @@ import org.springframework.ai.moderation.ModerationResponse;
 import org.springframework.ai.moderation.ModerationResult;
 import org.springframework.ai.openai.api.OpenAiModerationApi;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.core.retry.RetryTemplate;
 import org.springframework.http.ResponseEntity;
-import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 
 /**
@@ -77,7 +77,7 @@ public class OpenAiModerationModel implements ModerationModel {
 
 	@Override
 	public ModerationResponse call(ModerationPrompt moderationPrompt) {
-		return this.retryTemplate.execute(ctx -> {
+		return RetryUtils.execute(this.retryTemplate, () -> {
 
 			String instructions = moderationPrompt.getInstructions().getText();
 
@@ -107,7 +107,7 @@ public class OpenAiModerationModel implements ModerationModel {
 		OpenAiModerationApi.OpenAiModerationResponse moderationApiResponse = moderationResponseEntity.getBody();
 		if (moderationApiResponse == null) {
 			logger.warn("No moderation response returned for request: {}", openAiModerationRequest);
-			return new ModerationResponse(new Generation());
+			return new ModerationResponse(null);
 		}
 
 		List<ModerationResult> moderationResults = new ArrayList<>();

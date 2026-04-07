@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.ai.vectorstore.qdrant;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -23,6 +24,7 @@ import io.qdrant.client.grpc.JsonWithInt.ListValue;
 import io.qdrant.client.grpc.JsonWithInt.Value;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.jspecify.annotations.Nullable;
 
 import org.springframework.util.Assert;
 
@@ -30,6 +32,7 @@ import org.springframework.util.Assert;
  * Utility methods for building Java objects from io.qdrant.client.grpc.JsonWithInt.Value.
  *
  * @author Anush Shetty
+ * @author Heonwoo Kim
  * @since 0.8.1
  */
 final class QdrantObjectFactory {
@@ -39,37 +42,34 @@ final class QdrantObjectFactory {
 	private QdrantObjectFactory() {
 	}
 
-	public static Map<String, Object> toObjectMap(Map<String, Value> payload) {
+	public static Map<String, ? super Object> toObjectMap(Map<String, Value> payload) {
 		Assert.notNull(payload, "Payload map must not be null");
-		return payload.entrySet().stream().collect(Collectors.toMap(e -> e.getKey(), e -> object(e.getValue())));
+		Map<String, @Nullable Object> map = new HashMap<>();
+		for (Map.Entry<String, Value> entry : payload.entrySet()) {
+			map.put(entry.getKey(), object(entry.getValue()));
+		}
+		return map;
 	}
 
 	private static Object object(ListValue listValue) {
 		return listValue.getValuesList().stream().map(QdrantObjectFactory::object).collect(Collectors.toList());
 	}
 
-	private static Object object(Value value) {
+	private static @Nullable Object object(Value value) {
 
-		switch (value.getKindCase()) {
-			case INTEGER_VALUE:
-				return value.getIntegerValue();
-			case STRING_VALUE:
-				return value.getStringValue();
-			case DOUBLE_VALUE:
-				return value.getDoubleValue();
-			case BOOL_VALUE:
-				return value.getBoolValue();
-			case LIST_VALUE:
-				return object(value.getListValue());
-			case STRUCT_VALUE:
-				return toObjectMap(value.getStructValue().getFieldsMap());
-			case NULL_VALUE:
-				return null;
-			case KIND_NOT_SET:
-			default:
+		return switch (value.getKindCase()) {
+			case INTEGER_VALUE -> value.getIntegerValue();
+			case STRING_VALUE -> value.getStringValue();
+			case DOUBLE_VALUE -> value.getDoubleValue();
+			case BOOL_VALUE -> value.getBoolValue();
+			case LIST_VALUE -> object(value.getListValue());
+			case STRUCT_VALUE -> toObjectMap(value.getStructValue().getFieldsMap());
+			case NULL_VALUE -> null;
+			default -> {
 				logger.warn("Unsupported value type: " + value.getKindCase());
-				return null;
-		}
+				yield null;
+			}
+		};
 
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package org.springframework.ai.chat.client.advisor.api;
 
-import org.springframework.ai.chat.client.ChatClientRequest;
-import org.springframework.ai.chat.client.ChatClientResponse;
+import java.util.List;
+
 import reactor.core.publisher.Flux;
 
-import java.util.List;
+import org.springframework.ai.chat.client.ChatClientRequest;
+import org.springframework.ai.chat.client.ChatClientResponse;
 
 /**
  * A chain of {@link StreamAdvisor} instances orchestrating the execution of a
@@ -44,5 +45,15 @@ public interface StreamAdvisorChain extends AdvisorChain {
 	 * at the time of its creation.
 	 */
 	List<StreamAdvisor> getStreamAdvisors();
+
+	/**
+	 * Creates a new StreamAdvisorChain copy that contains all advisors after the
+	 * specified advisor.
+	 * @param after the StreamAdvisor after which to copy the chain
+	 * @return a new StreamAdvisorChain containing all advisors after the specified
+	 * advisor
+	 * @throws IllegalArgumentException if the specified advisor is not part of the chain
+	 */
+	StreamAdvisorChain copy(StreamAdvisor after);
 
 }

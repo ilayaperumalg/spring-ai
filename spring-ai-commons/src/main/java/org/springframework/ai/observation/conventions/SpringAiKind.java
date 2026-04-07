@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ public enum SpringAiKind {
 
 	// @formatter:off
 
-	// Please, keep the alphabetical sorting.
 	/**
 	 * Spring AI kind for advisor.
 	 */
@@ -36,6 +35,11 @@ public enum SpringAiKind {
 	 * Spring AI kind for chat client.
 	 */
 	CHAT_CLIENT("chat_client"),
+
+	/**
+	 * Spring AI kind for tool calling.
+	 */
+	TOOL_CALL("tool_call"),
 
 	/**
 	 * Spring AI kind for vector store.

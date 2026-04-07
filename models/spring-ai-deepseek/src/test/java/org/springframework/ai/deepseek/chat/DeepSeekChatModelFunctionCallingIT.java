@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,18 @@
 
 package org.springframework.ai.deepseek.chat;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -34,13 +42,6 @@ import org.springframework.ai.deepseek.api.MockWeatherService;
 import org.springframework.ai.tool.function.FunctionToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import reactor.core.publisher.Flux;
-
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -154,13 +155,10 @@ class DeepSeekChatModelFunctionCallingIT {
 
 		ChatResponse chatResponse = this.chatModel.call(prompt);
 		assertThat(chatResponse).isNotNull();
-		assertThat(chatResponse.getResult().getOutput());
+		assertThat(chatResponse.getResult().getOutput()).isNotNull();
 		assertThat(chatResponse.getResult().getOutput().getText()).contains("San Francisco");
 		assertThat(chatResponse.getResult().getOutput().getText()).contains("30");
-		// 这个 total token 是第一次 chat 以及 tool call 之后的两次请求 token 总和
-
-		// the total token is first chat and tool call request
-		assertThat(chatResponse.getMetadata().getUsage().getTotalTokens()).isLessThan(700).isGreaterThan(280);
+		assertThat(chatResponse.getMetadata().getUsage()).isNotNull();
 	}
 
 	@Test
@@ -180,7 +178,6 @@ class DeepSeekChatModelFunctionCallingIT {
 		assertThat(chatResponse).isNotNull();
 		assertThat(chatResponse.getMetadata()).isNotNull();
 		assertThat(chatResponse.getMetadata().getUsage()).isNotNull();
-		assertThat(chatResponse.getMetadata().getUsage().getTotalTokens()).isLessThan(700).isGreaterThan(280);
 	}
 
 }

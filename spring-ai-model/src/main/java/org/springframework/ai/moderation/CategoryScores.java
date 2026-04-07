@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -131,23 +131,23 @@ public final class CategoryScores {
 	}
 
 	public double getDangerousAndCriminalContent() {
-		return dangerousAndCriminalContent;
+		return this.dangerousAndCriminalContent;
 	}
 
 	public double getHealth() {
-		return health;
+		return this.health;
 	}
 
 	public double getFinancial() {
-		return financial;
+		return this.financial;
 	}
 
 	public double getLaw() {
-		return law;
+		return this.law;
 	}
 
 	public double getPii() {
-		return pii;
+		return this.pii;
 	}
 
 	@Override
@@ -155,10 +155,9 @@ public final class CategoryScores {
 		if (this == o) {
 			return true;
 		}
-		if (!(o instanceof CategoryScores)) {
+		if (!(o instanceof CategoryScores that)) {
 			return false;
 		}
-		CategoryScores that = (CategoryScores) o;
 		return Double.compare(that.sexual, this.sexual) == 0 && Double.compare(that.hate, this.hate) == 0
 				&& Double.compare(that.harassment, this.harassment) == 0
 				&& Double.compare(that.selfHarm, this.selfHarm) == 0
@@ -189,11 +188,11 @@ public final class CategoryScores {
 				+ this.hateThreatening + ", violenceGraphic=" + this.violenceGraphic + ", selfHarmIntent="
 				+ this.selfHarmIntent + ", selfHarmInstructions=" + this.selfHarmInstructions
 				+ ", harassmentThreatening=" + this.harassmentThreatening + ", violence=" + this.violence
-				+ ", dangerousAndCriminalContent=" + dangerousAndCriminalContent + ", health=" + health + ", financial="
-				+ financial + ", law=" + law + ", pii=" + pii + '}';
+				+ ", dangerousAndCriminalContent=" + this.dangerousAndCriminalContent + ", health=" + this.health
+				+ ", financial=" + this.financial + ", law=" + this.law + ", pii=" + this.pii + '}';
 	}
 
-	public static class Builder {
+	public static final class Builder {
 
 		private double sexual;
 

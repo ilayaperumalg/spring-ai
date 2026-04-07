@@ -1,5 +1,5 @@
 /*
- * Copyright 2025-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 @EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 public class OpenAiModerationModelNoOpApiKeysIT {
 
+	private static final String TEST_MODERATION_PATH = "/v1/moderations";
+
 	@Autowired
 	private OpenAiModerationModel moderationModel;
 
@@ -55,7 +57,7 @@ public class OpenAiModerationModelNoOpApiKeysIT {
 
 		@Bean
 		public OpenAiModerationApi moderationGenerationApi() {
-			return OpenAiModerationApi.builder().apiKey(new NoopApiKey()).build();
+			return OpenAiModerationApi.builder().apiKey(new NoopApiKey()).moderationPath(TEST_MODERATION_PATH).build();
 		}
 
 		@Bean

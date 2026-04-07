@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 package org.springframework.ai.model.bedrock.titan.autoconfigure;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.observation.ObservationRegistry;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.regions.providers.AwsRegionProvider;
+import tools.jackson.databind.json.JsonMapper;
 
 import org.springframework.ai.bedrock.titan.BedrockTitanEmbeddingModel;
 import org.springframework.ai.bedrock.titan.api.TitanEmbeddingBedrockApi;
@@ -26,6 +27,7 @@ import org.springframework.ai.model.SpringAIModelProperties;
 import org.springframework.ai.model.SpringAIModels;
 import org.springframework.ai.model.bedrock.autoconfigure.BedrockAwsConnectionConfiguration;
 import org.springframework.ai.model.bedrock.autoconfigure.BedrockAwsConnectionProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -40,6 +42,7 @@ import org.springframework.context.annotation.Import;
  *
  * @author Christian Tzolov
  * @author Wei Jiang
+ * @author SriVarshan P
  * @since 0.8.0
  */
 @AutoConfiguration
@@ -55,17 +58,31 @@ public class BedrockTitanEmbeddingAutoConfiguration {
 	@ConditionalOnBean({ AwsCredentialsProvider.class, AwsRegionProvider.class })
 	public TitanEmbeddingBedrockApi titanEmbeddingBedrockApi(AwsCredentialsProvider credentialsProvider,
 			AwsRegionProvider regionProvider, BedrockTitanEmbeddingProperties properties,
-			BedrockAwsConnectionProperties awsProperties, ObjectMapper objectMapper) {
+			BedrockAwsConnectionProperties awsProperties, JsonMapper jsonMapper) {
+
+		// Validate required properties
+		if (properties.getModel() == null || awsProperties.getTimeout() == null) {
+			throw new IllegalArgumentException("Required properties for TitanEmbeddingBedrockApi are missing.");
+		}
+
 		return new TitanEmbeddingBedrockApi(properties.getModel(), credentialsProvider, regionProvider.getRegion(),
-				objectMapper, awsProperties.getTimeout());
+				jsonMapper, awsProperties.getTimeout());
 	}
 
 	@Bean
 	@ConditionalOnMissingBean
 	@ConditionalOnBean(TitanEmbeddingBedrockApi.class)
 	public BedrockTitanEmbeddingModel titanEmbeddingModel(TitanEmbeddingBedrockApi titanEmbeddingApi,
-			BedrockTitanEmbeddingProperties properties) {
-		return new BedrockTitanEmbeddingModel(titanEmbeddingApi).withInputType(properties.getInputType());
+			BedrockTitanEmbeddingProperties properties, ObjectProvider<ObservationRegistry> observationRegistry) {
+
+		// Validate required properties
+		if (properties.getInputType() == null) {
+			throw new IllegalArgumentException("InputType property for BedrockTitanEmbeddingModel is missing.");
+		}
+
+		return new BedrockTitanEmbeddingModel(titanEmbeddingApi,
+				observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP))
+			.withInputType(properties.getInputType());
 	}
 
 }

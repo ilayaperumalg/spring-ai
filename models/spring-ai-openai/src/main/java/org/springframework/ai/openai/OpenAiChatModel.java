@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
@@ -43,7 +42,6 @@ import org.springframework.ai.chat.metadata.DefaultUsage;
 import org.springframework.ai.chat.metadata.EmptyUsage;
 import org.springframework.ai.chat.metadata.RateLimit;
 import org.springframework.ai.chat.metadata.Usage;
-import org.springframework.ai.support.UsageCalculator;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -62,6 +60,7 @@ import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionEligibilityPredicate;
 import org.springframework.ai.model.tool.ToolExecutionResult;
+import org.springframework.ai.model.tool.internal.ToolCallReactiveContextHolder;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.openai.api.OpenAiApi.ChatCompletion;
 import org.springframework.ai.openai.api.OpenAiApi.ChatCompletion.Choice;
@@ -74,16 +73,17 @@ import org.springframework.ai.openai.api.OpenAiApi.ChatCompletionRequest;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
 import org.springframework.ai.openai.metadata.support.OpenAiResponseHeaderExtractor;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.ai.support.UsageCalculator;
 import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
+import org.springframework.core.retry.RetryTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.retry.support.RetryTemplate;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.MimeType;
 import org.springframework.util.MimeTypeUtils;
-import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 
 /**
@@ -104,6 +104,7 @@ import org.springframework.util.StringUtils;
  * @author Ilayaperumal Gopinathan
  * @author Alexandros Pappas
  * @author Soby Chacko
+ * @author Jonghoon Park
  * @see ChatModel
  * @see StreamingChatModel
  * @see OpenAiApi
@@ -180,7 +181,7 @@ public class OpenAiChatModel implements ChatModel {
 		return this.internalCall(requestPrompt, null);
 	}
 
-	public ChatResponse internalCall(Prompt prompt, ChatResponse previousChatResponse) {
+	private ChatResponse internalCall(Prompt prompt, ChatResponse previousChatResponse) {
 
 		ChatCompletionRequest request = createRequest(prompt, false);
 
@@ -194,8 +195,8 @@ public class OpenAiChatModel implements ChatModel {
 					this.observationRegistry)
 			.observe(() -> {
 
-				ResponseEntity<ChatCompletion> completionEntity = this.retryTemplate
-					.execute(ctx -> this.openAiApi.chatCompletionEntity(request, getAdditionalHttpHeaders(prompt)));
+				ResponseEntity<ChatCompletion> completionEntity = RetryUtils.execute(this.retryTemplate,
+						() -> this.openAiApi.chatCompletionEntity(request, getAdditionalHttpHeaders(prompt)));
 
 				var chatCompletion = completionEntity.getBody();
 
@@ -215,10 +216,10 @@ public class OpenAiChatModel implements ChatModel {
 					Map<String, Object> metadata = Map.of(
 							"id", chatCompletion.id() != null ? chatCompletion.id() : "",
 							"role", choice.message().role() != null ? choice.message().role().name() : "",
-							"index", choice.index(),
-							"finishReason", choice.finishReason() != null ? choice.finishReason().name() : "",
+							"index", choice.index() != null ? choice.index() : 0,
+							"finishReason", getFinishReasonJson(choice.finishReason()),
 							"refusal", StringUtils.hasText(choice.message().refusal()) ? choice.message().refusal() : "",
-							"annotations", choice.message().annotations() != null ? choice.message().annotations() : List.of());
+							"annotations", choice.message().annotations() != null ? choice.message().annotations() : List.of(Map.of()));
 					return buildGeneration(choice, metadata, request);
 				}).toList();
 				// @formatter:on
@@ -266,16 +267,16 @@ public class OpenAiChatModel implements ChatModel {
 		return internalStream(requestPrompt, null);
 	}
 
-	public Flux<ChatResponse> internalStream(Prompt prompt, ChatResponse previousChatResponse) {
+	private Flux<ChatResponse> internalStream(Prompt prompt, ChatResponse previousChatResponse) {
 		return Flux.deferContextual(contextView -> {
 			ChatCompletionRequest request = createRequest(prompt, true);
 
-			if (request.outputModalities() != null) {
-				if (request.outputModalities().stream().anyMatch(m -> m.equals("audio"))) {
-					logger.warn("Audio output is not supported for streaming requests. Removing audio output.");
-					throw new IllegalArgumentException("Audio output is not supported for streaming requests.");
-				}
+			if (request.outputModalities() != null
+					&& request.outputModalities().contains(OpenAiApi.OutputModality.AUDIO)) {
+				logger.warn("Audio output is not supported for streaming requests. Removing audio output.");
+				throw new IllegalArgumentException("Audio output is not supported for streaming requests.");
 			}
+
 			if (request.audioParameters() != null) {
 				logger.warn("Audio parameters are not supported for streaming requests. Removing audio parameters.");
 				throw new IllegalArgumentException("Audio parameters are not supported for streaming requests.");
@@ -304,20 +305,21 @@ public class OpenAiChatModel implements ChatModel {
 			Flux<ChatResponse> chatResponse = completionChunks.map(this::chunkToChatCompletion)
 				.switchMap(chatCompletion -> Mono.just(chatCompletion).map(chatCompletion2 -> {
 					try {
-						@SuppressWarnings("null")
-						String id = chatCompletion2.id();
+						// If an id is not provided, set to "NO_ID" (for compatible APIs).
+						String id = chatCompletion2.id() == null ? "NO_ID" : chatCompletion2.id();
 
 						List<Generation> generations = chatCompletion2.choices().stream().map(choice -> { // @formatter:off
 							if (choice.message().role() != null) {
 								roleMap.putIfAbsent(id, choice.message().role().name());
 							}
 							Map<String, Object> metadata = Map.of(
-									"id", chatCompletion2.id(),
+									"id", id,
 									"role", roleMap.getOrDefault(id, ""),
-									"index", choice.index(),
-									"finishReason", choice.finishReason() != null ? choice.finishReason().name() : "",
+									"index", choice.index() != null ? choice.index() : 0,
+									"finishReason", getFinishReasonJson(choice.finishReason()),
 									"refusal", StringUtils.hasText(choice.message().refusal()) ? choice.message().refusal() : "",
-									"annotations", choice.message().annotations() != null ? choice.message().annotations() : List.of());
+									"annotations", choice.message().annotations() != null ? choice.message().annotations() : List.of(),
+									"reasoningContent", choice.message().reasoningContent() != null ? choice.message().reasoningContent() : "");
 							return buildGeneration(choice, metadata, request);
 						}).toList();
 						// @formatter:on
@@ -362,10 +364,17 @@ public class OpenAiChatModel implements ChatModel {
 			// @formatter:off
 			Flux<ChatResponse> flux = chatResponse.flatMap(response -> {
 				if (this.toolExecutionEligibilityPredicate.isToolExecutionRequired(prompt.getOptions(), response)) {
-					return Flux.defer(() -> {
-						// FIXME: bounded elastic needs to be used since tool calling
-						//  is currently only synchronous
-						var toolExecutionResult = this.toolCallingManager.executeToolCalls(prompt, response);
+					// FIXME: bounded elastic needs to be used since tool calling
+					//  is currently only synchronous
+					return Flux.deferContextual(ctx -> {
+						ToolExecutionResult toolExecutionResult;
+						try {
+							ToolCallReactiveContextHolder.setContext(ctx);
+							toolExecutionResult = this.toolCallingManager.executeToolCalls(prompt, response);
+						}
+						finally {
+							ToolCallReactiveContextHolder.clearContext();
+						}
 						if (toolExecutionResult.returnDirect()) {
 							// Return tool execution result directly to the client.
 							return Flux.just(ChatResponse.builder().from(response)
@@ -393,14 +402,15 @@ public class OpenAiChatModel implements ChatModel {
 		});
 	}
 
-	private MultiValueMap<String, String> getAdditionalHttpHeaders(Prompt prompt) {
+	private HttpHeaders getAdditionalHttpHeaders(Prompt prompt) {
 
 		Map<String, String> headers = new HashMap<>(this.defaultOptions.getHttpHeaders());
 		if (prompt.getOptions() != null && prompt.getOptions() instanceof OpenAiChatOptions chatOptions) {
 			headers.putAll(chatOptions.getHttpHeaders());
 		}
-		return CollectionUtils.toMultiValueMap(
-				headers.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> List.of(e.getValue()))));
+		HttpHeaders httpHeaders = new HttpHeaders();
+		headers.forEach(httpHeaders::add);
+		return httpHeaders;
 	}
 
 	private Generation buildGeneration(Choice choice, Map<String, Object> metadata, ChatCompletionRequest request) {
@@ -412,13 +422,13 @@ public class OpenAiChatModel implements ChatModel {
 							toolCall.function().name(), toolCall.function().arguments()))
 					.toList();
 
-		String finishReason = (choice.finishReason() != null ? choice.finishReason().name() : "");
-		var generationMetadataBuilder = ChatGenerationMetadata.builder().finishReason(finishReason);
+		var generationMetadataBuilder = ChatGenerationMetadata.builder()
+			.finishReason(getFinishReasonJson(choice.finishReason()));
 
 		List<Media> media = new ArrayList<>();
 		String textContent = choice.message().content();
 		var audioOutput = choice.message().audioOutput();
-		if (audioOutput != null) {
+		if (audioOutput != null && StringUtils.hasText(audioOutput.data()) && request.audioParameters() != null) {
 			String mimeType = String.format("audio/%s", request.audioParameters().format().name().toLowerCase());
 			byte[] audioData = Base64.getDecoder().decode(audioOutput.data());
 			Resource resource = new ByteArrayResource(audioData);
@@ -439,8 +449,21 @@ public class OpenAiChatModel implements ChatModel {
 			generationMetadataBuilder.metadata("logprobs", choice.logprobs());
 		}
 
-		var assistantMessage = new AssistantMessage(textContent, metadata, toolCalls, media);
+		var assistantMessage = AssistantMessage.builder()
+			.content(textContent)
+			.properties(metadata)
+			.toolCalls(toolCalls)
+			.media(media)
+			.build();
 		return new Generation(assistantMessage, generationMetadataBuilder.build());
+	}
+
+	private String getFinishReasonJson(OpenAiApi.ChatCompletionFinishReason finishReason) {
+		if (finishReason == null) {
+			return "";
+		}
+		// Return enum name for backward compatibility
+		return finishReason.name();
 	}
 
 	private ChatResponseMetadata from(OpenAiApi.ChatCompletion result, RateLimit rateLimit, Usage usage) {
@@ -525,6 +548,8 @@ public class OpenAiChatModel implements ChatModel {
 					this.defaultOptions.getToolCallbacks()));
 			requestOptions.setToolContext(ToolCallingChatOptions.mergeToolContext(runtimeOptions.getToolContext(),
 					this.defaultOptions.getToolContext()));
+			requestOptions
+				.setExtraBody(mergeExtraBody(runtimeOptions.getExtraBody(), this.defaultOptions.getExtraBody()));
 		}
 		else {
 			requestOptions.setHttpHeaders(this.defaultOptions.getHttpHeaders());
@@ -532,6 +557,7 @@ public class OpenAiChatModel implements ChatModel {
 			requestOptions.setToolNames(this.defaultOptions.getToolNames());
 			requestOptions.setToolCallbacks(this.defaultOptions.getToolCallbacks());
 			requestOptions.setToolContext(this.defaultOptions.getToolContext());
+			requestOptions.setExtraBody(this.defaultOptions.getExtraBody());
 		}
 
 		ToolCallingChatOptions.validateToolCallbacks(requestOptions.getToolCallbacks());
@@ -544,6 +570,21 @@ public class OpenAiChatModel implements ChatModel {
 		var mergedHttpHeaders = new HashMap<>(defaultHttpHeaders);
 		mergedHttpHeaders.putAll(runtimeHttpHeaders);
 		return mergedHttpHeaders;
+	}
+
+	private Map<String, Object> mergeExtraBody(Map<String, Object> runtimeExtraBody,
+			Map<String, Object> defaultExtraBody) {
+		if (defaultExtraBody == null && runtimeExtraBody == null) {
+			return null;
+		}
+		var merged = new HashMap<String, Object>();
+		if (defaultExtraBody != null) {
+			merged.putAll(defaultExtraBody);
+		}
+		if (runtimeExtraBody != null) {
+			merged.putAll(runtimeExtraBody); // runtime overrides default
+		}
+		return merged.isEmpty() ? null : merged;
 	}
 
 	/**
@@ -584,7 +625,7 @@ public class OpenAiChatModel implements ChatModel {
 
 				}
 				return List.of(new ChatCompletionMessage(assistantMessage.getText(),
-						ChatCompletionMessage.Role.ASSISTANT, null, null, toolCalls, null, audioOutput, null));
+						ChatCompletionMessage.Role.ASSISTANT, null, null, toolCalls, null, audioOutput, null, null));
 			}
 			else if (message.getMessageType() == MessageType.TOOL) {
 				ToolResponseMessage toolMessage = (ToolResponseMessage) message;
@@ -594,7 +635,7 @@ public class OpenAiChatModel implements ChatModel {
 				return toolMessage.getResponses()
 					.stream()
 					.map(tr -> new ChatCompletionMessage(tr.responseData(), ChatCompletionMessage.Role.TOOL, tr.name(),
-							tr.id(), null, null, null, null))
+							tr.id(), null, null, null, null, null))
 					.toList();
 			}
 			else {
@@ -610,9 +651,10 @@ public class OpenAiChatModel implements ChatModel {
 		// Add the tool definitions to the request's tools parameter.
 		List<ToolDefinition> toolDefinitions = this.toolCallingManager.resolveToolDefinitions(requestOptions);
 		if (!CollectionUtils.isEmpty(toolDefinitions)) {
-			request = ModelOptionsUtils.merge(
-					OpenAiChatOptions.builder().tools(this.getFunctionTools(toolDefinitions)).build(), request,
-					ChatCompletionRequest.class);
+			request = ModelOptionsUtils.merge(OpenAiChatOptions.builder()
+				.tools(this.getFunctionTools(toolDefinitions))
+				.extraBody(request.extraBody())
+				.build(), request, ChatCompletionRequest.class);
 		}
 
 		// Remove `streamOptions` from the request if it is not a streaming request
@@ -633,6 +675,10 @@ public class OpenAiChatModel implements ChatModel {
 		if (MimeTypeUtils.parseMimeType("audio/wav").equals(mimeType)) {
 			return new MediaContent(
 					new MediaContent.InputAudio(fromAudioData(media.getData()), MediaContent.InputAudio.Format.WAV));
+		}
+		if (MimeTypeUtils.parseMimeType("application/pdf").equals(mimeType)) {
+			return new MediaContent(new MediaContent.InputFile(media.getName(),
+					this.fromMediaData(media.getMimeType(), media.getData())));
 		}
 		else {
 			return new MediaContent(
@@ -694,7 +740,29 @@ public class OpenAiChatModel implements ChatModel {
 		return new Builder();
 	}
 
+	/**
+	 * Returns a builder pre-populated with the current configuration for mutation.
+	 */
+	public Builder mutate() {
+		return new Builder(this);
+	}
+
+	@Override
+	public OpenAiChatModel clone() {
+		return this.mutate().build();
+	}
+
 	public static final class Builder {
+
+		// Copy constructor for mutate()
+		public Builder(OpenAiChatModel model) {
+			this.openAiApi = model.openAiApi;
+			this.defaultOptions = model.defaultOptions;
+			this.toolCallingManager = model.toolCallingManager;
+			this.toolExecutionEligibilityPredicate = model.toolExecutionEligibilityPredicate;
+			this.retryTemplate = model.retryTemplate;
+			this.observationRegistry = model.observationRegistry;
+		}
 
 		private OpenAiApi openAiApi;
 

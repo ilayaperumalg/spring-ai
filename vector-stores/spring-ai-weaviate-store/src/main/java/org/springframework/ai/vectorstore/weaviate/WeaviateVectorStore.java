@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,10 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.weaviate.client.WeaviateClient;
 import io.weaviate.client.base.Result;
 import io.weaviate.client.base.WeaviateErrorMessage;
@@ -45,11 +44,13 @@ import io.weaviate.client.v1.graphql.query.fields.Field;
 import io.weaviate.client.v1.graphql.query.fields.Fields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
+import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.ai.model.EmbeddingUtils;
 import org.springframework.ai.observation.conventions.VectorStoreProvider;
 import org.springframework.ai.vectorstore.AbstractVectorStoreBuilder;
@@ -75,7 +76,7 @@ import org.springframework.util.StringUtils;
  * <pre>{@code
  * // Create the vector store with builder
  * WeaviateVectorStore vectorStore = WeaviateVectorStore.builder(weaviateClient, embeddingModel)
- *     .objectClass("CustomClass")                // Optional: Custom class name (default: SpringAiWeaviate)
+ *     .options(options)                     	  // Optional: use custom options
  *     .consistencyLevel(ConsistentLevel.QUORUM)  // Optional: Set consistency level (default: ONE)
  *     .filterMetadataFields(List.of(             // Optional: Configure filterable metadata fields
  *         MetadataField.text("country"),
@@ -89,15 +90,12 @@ import org.springframework.util.StringUtils;
  * @author Josh Long
  * @author Soby Chacko
  * @author Thomas Vitale
+ * @author Jonghoon Park
  * @since 1.0.0
  */
 public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(WeaviateVectorStore.class);
-
-	private static final String METADATA_FIELD_PREFIX = "meta_";
-
-	private static final String CONTENT_FIELD_NAME = "content";
 
 	private static final String METADATA_FIELD_NAME = "metadata";
 
@@ -111,9 +109,9 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 	private final WeaviateClient weaviateClient;
 
-	private final ConsistentLevel consistencyLevel;
+	private final WeaviateVectorStoreOptions options;
 
-	private final String weaviateObjectClass;
+	private final ConsistentLevel consistencyLevel;
 
 	/**
 	 * List of metadata fields (as field name and type) that can be used in similarity
@@ -138,12 +136,6 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 	private final WeaviateFilterExpressionConverter filterExpressionConverter;
 
 	/**
-	 * Used to serialize/deserialize the document metadata when stored/retrieved from the
-	 * weaviate vector store.
-	 */
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
-	/**
 	 * Protected constructor for creating a WeaviateVectorStore instance using the builder
 	 * pattern. This constructor initializes the vector store with the configured settings
 	 * from the builder and performs necessary validations.
@@ -157,12 +149,14 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		Assert.notNull(builder.weaviateClient, "WeaviateClient must not be null");
 
+		this.options = builder.options;
+
 		this.weaviateClient = builder.weaviateClient;
 		this.consistencyLevel = builder.consistencyLevel;
-		this.weaviateObjectClass = builder.weaviateObjectClass;
 		this.filterMetadataFields = builder.filterMetadataFields;
 		this.filterExpressionConverter = new WeaviateFilterExpressionConverter(
-				this.filterMetadataFields.stream().map(MetadataField::name).toList());
+				this.filterMetadataFields.stream().map(MetadataField::name).toList(),
+				this.options.getMetaFieldPrefix());
 		this.weaviateSimilaritySearchFields = buildWeaviateSimilaritySearchFields();
 	}
 
@@ -179,10 +173,10 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		List<Field> searchWeaviateFieldList = new ArrayList<>();
 
-		searchWeaviateFieldList.add(Field.builder().name(CONTENT_FIELD_NAME).build());
+		searchWeaviateFieldList.add(Field.builder().name(this.options.getContentFieldName()).build());
 		searchWeaviateFieldList.add(Field.builder().name(METADATA_FIELD_NAME).build());
 		searchWeaviateFieldList.addAll(this.filterMetadataFields.stream()
-			.map(mf -> Field.builder().name(METADATA_FIELD_PREFIX + mf.name()).build())
+			.map(mf -> Field.builder().name(this.options.getMetaFieldPrefix() + mf.name()).build())
 			.toList());
 		searchWeaviateFieldList.add(Field.builder()
 			.name(ADDITIONAL_FIELD_NAME)
@@ -202,7 +196,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 			return;
 		}
 
-		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptions.builder().build(),
 				this.batchingStrategy);
 
 		List<WeaviateObject> weaviateObjects = documents.stream()
@@ -247,12 +241,12 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		// https://weaviate.io/developers/weaviate/config-refs/datatypes
 		Map<String, Object> fields = new HashMap<>();
-		fields.put(CONTENT_FIELD_NAME, document.getText());
+		fields.put(this.options.getContentFieldName(), document.getText());
 		try {
-			String metadataString = this.objectMapper.writeValueAsString(document.getMetadata());
+			String metadataString = JsonMapper.shared().writeValueAsString(document.getMetadata());
 			fields.put(METADATA_FIELD_NAME, metadataString);
 		}
-		catch (JsonProcessingException e) {
+		catch (JacksonException e) {
 			throw new RuntimeException("Failed to serialize the Document metadata: " + document.getText());
 		}
 
@@ -260,12 +254,12 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 		// expressions on them.
 		for (MetadataField mf : this.filterMetadataFields) {
 			if (document.getMetadata().containsKey(mf.name())) {
-				fields.put(METADATA_FIELD_PREFIX + mf.name(), document.getMetadata().get(mf.name()));
+				fields.put(this.options.getMetaFieldPrefix() + mf.name(), document.getMetadata().get(mf.name()));
 			}
 		}
 
 		return WeaviateObject.builder()
-			.className(this.weaviateObjectClass)
+			.className(this.options.getObjectClass())
 			.id(document.getId())
 			.vector(EmbeddingUtils.toFloatArray(embeddings.get(documents.indexOf(document))))
 			.properties(fields)
@@ -277,7 +271,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		Result<BatchDeleteResponse> result = this.weaviateClient.batch()
 			.objectsBatchDeleter()
-			.withClassName(this.weaviateObjectClass)
+			.withClassName(this.options.getObjectClass())
 			.withConsistencyLevel(this.consistencyLevel.name())
 			.withWhere(WhereFilter.builder()
 				.path("id")
@@ -323,7 +317,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 				logger.debug("No documents found matching filter expression");
 			}
 		}
-		catch (Exception e) {
+		catch (JacksonException e) {
 			logger.error("Failed to delete documents by filter", e);
 			throw new IllegalStateException("Failed to delete documents by filter", e);
 		}
@@ -336,7 +330,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		GetBuilder.GetBuilderBuilder builder = GetBuilder.builder();
 
-		GetBuilderBuilder queryBuilder = builder.className(this.weaviateObjectClass)
+		GetBuilderBuilder queryBuilder = builder.className(this.options.getObjectClass())
 			.withNearVectorFilter(NearVectorArgument.builder()
 				.vector(EmbeddingUtils.toFloatArray(embedding))
 				.certainty((float) request.getSimilarityThreshold())
@@ -349,6 +343,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 		String graphQLQuery = queryBuilder.build().buildQuery();
 
 		if (request.hasFilterExpression()) {
+			Assert.state(request.getFilterExpression() != null, "filter expression must not be null");
 			// replace the empty 'where:{}' placeholder with real filter.
 			String filter = this.filterExpressionConverter.convertExpression(request.getFilterExpression());
 			graphQLQuery = graphQLQuery.replace("where:{}", String.format("where:{%s}", filter));
@@ -400,25 +395,23 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		// Additional (System)
 		Map<String, ?> additional = (Map<String, ?>) item.get(ADDITIONAL_FIELD_NAME);
-		double certainty = (Double) additional.get(ADDITIONAL_CERTAINTY_FIELD_NAME);
-		String id = (String) additional.get(ADDITIONAL_ID_FIELD_NAME);
+		Assert.state(additional != null, "additional field should not be null");
+		double certainty = (Double) Objects.requireNonNull(additional.get(ADDITIONAL_CERTAINTY_FIELD_NAME),
+				"missing additional certainty field");
+		String id = (String) Objects.requireNonNull(additional.get(ADDITIONAL_ID_FIELD_NAME),
+				"missing additional id field");
 
 		// Metadata
 		Map<String, Object> metadata = new HashMap<>();
 		metadata.put(DocumentMetadata.DISTANCE.value(), 1 - certainty);
 
-		try {
-			String metadataJson = (String) item.get(METADATA_FIELD_NAME);
-			if (StringUtils.hasText(metadataJson)) {
-				metadata.putAll(this.objectMapper.readValue(metadataJson, Map.class));
-			}
-		}
-		catch (Exception e) {
-			throw new RuntimeException(e);
+		String metadataJson = (String) item.get(METADATA_FIELD_NAME);
+		if (StringUtils.hasText(metadataJson)) {
+			metadata.putAll(JsonMapper.shared().readValue(metadataJson, Map.class));
 		}
 
 		// Content
-		String content = (String) item.get(CONTENT_FIELD_NAME);
+		String content = (String) item.get(this.options.getContentFieldName());
 
 		// @formatter:off
 		return Document.builder()
@@ -434,7 +427,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 		return VectorStoreObservationContext.builder(VectorStoreProvider.WEAVIATE.value(), operationName)
 			.dimensions(this.embeddingModel.dimensions())
-			.collectionName(this.weaviateObjectClass);
+			.collectionName(this.options.getObjectClass());
 	}
 
 	@Override
@@ -526,7 +519,7 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 
 	public static class Builder extends AbstractVectorStoreBuilder<Builder> {
 
-		private String weaviateObjectClass = "SpringAiWeaviate";
+		private WeaviateVectorStoreOptions options = new WeaviateVectorStoreOptions();
 
 		private ConsistentLevel consistencyLevel = ConsistentLevel.ONE;
 
@@ -548,14 +541,15 @@ public class WeaviateVectorStore extends AbstractObservationVectorStore {
 		}
 
 		/**
-		 * Configures the Weaviate object class.
-		 * @param objectClass the object class to use
+		 * Configures the Weaviate vector store option.
+		 * @param options the vector store options to use
 		 * @return this builder instance
-		 * @throws IllegalArgumentException if objectClass is null or empty
+		 * @throws IllegalArgumentException if options is null or empty
+		 * @since 1.1.0
 		 */
-		public Builder objectClass(String objectClass) {
-			Assert.hasText(objectClass, "objectClass must not be empty");
-			this.weaviateObjectClass = objectClass;
+		public Builder options(WeaviateVectorStoreOptions options) {
+			Assert.notNull(options, "options must not be empty");
+			this.options = options;
 			return this;
 		}
 

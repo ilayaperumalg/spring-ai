@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,22 @@
 package org.springframework.ai.vectorstore.opensearch.autoconfigure;
 
 import java.net.URISyntaxException;
+import java.time.Duration;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import io.micrometer.observation.ObservationRegistry;
 import org.apache.hc.client5.http.auth.AuthScope;
 import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.nio.AsyncClientConnectionManager;
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
 import org.apache.hc.core5.http.HttpHost;
+import org.jspecify.annotations.Nullable;
 import org.opensearch.client.opensearch.OpenSearchClient;
 import org.opensearch.client.transport.OpenSearchTransport;
 import org.opensearch.client.transport.aws.AwsSdk2Transport;
@@ -33,7 +41,6 @@ import org.opensearch.client.transport.httpclient5.ApacheHttpClient5TransportBui
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 
@@ -47,9 +54,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
@@ -68,7 +75,7 @@ public class OpenSearchVectorStoreAutoConfiguration {
 	}
 
 	@Bean
-	@ConditionalOnMissingBean(BatchingStrategy.class)
+	@ConditionalOnMissingBean
 	BatchingStrategy batchingStrategy() {
 		return new TokenCountBatchingStrategy();
 	}
@@ -83,14 +90,19 @@ public class OpenSearchVectorStoreAutoConfiguration {
 		var mappingJson = Optional.ofNullable(properties.getMappingJson())
 			.orElse(OpenSearchVectorStore.DEFAULT_MAPPING_EMBEDDING_TYPE_KNN_VECTOR_DIMENSION);
 
-		return OpenSearchVectorStore.builder(openSearchClient, embeddingModel)
+		var builder = OpenSearchVectorStore.builder(openSearchClient, embeddingModel)
 			.index(indexName)
 			.mappingJson(mappingJson)
 			.initializeSchema(properties.isInitializeSchema())
 			.observationRegistry(observationRegistry.getIfUnique(() -> ObservationRegistry.NOOP))
-			.customObservationConvention(customObservationConvention.getIfAvailable(() -> null))
-			.batchingStrategy(batchingStrategy)
-			.build();
+			.customObservationConvention(customObservationConvention.getIfAvailable())
+			.batchingStrategy(batchingStrategy);
+
+		Optional.ofNullable(properties.getUseApproximateKnn()).ifPresent(builder::useApproximateKnn);
+		Optional.ofNullable(properties.getDimensions()).ifPresent(builder::dimensions);
+		Optional.ofNullable(properties.getSimilarity()).ifPresent(builder::similarityFunction);
+
+		return builder.build();
 	}
 
 	@Configuration(proxyBeanMethods = false)
@@ -99,26 +111,68 @@ public class OpenSearchVectorStoreAutoConfiguration {
 
 		@Bean
 		@ConditionalOnMissingBean
-		OpenSearchClient openSearchClient(OpenSearchConnectionDetails connectionDetails) {
+		OpenSearchClient openSearchClient(OpenSearchVectorStoreProperties properties,
+				OpenSearchConnectionDetails connectionDetails, Optional<SslBundles> sslBundles) {
+
 			HttpHost[] httpHosts = connectionDetails.getUris()
 				.stream()
 				.map(s -> createHttpHost(s))
 				.toArray(HttpHost[]::new);
-			ApacheHttpClient5TransportBuilder transportBuilder = ApacheHttpClient5TransportBuilder.builder(httpHosts);
-			Optional.ofNullable(connectionDetails.getUsername())
-				.map(username -> createBasicCredentialsProvider(httpHosts[0], username,
-						connectionDetails.getPassword()))
-				.ifPresent(basicCredentialsProvider -> transportBuilder
-					.setHttpClientConfigCallback(httpAsyncClientBuilder -> httpAsyncClientBuilder
-						.setDefaultCredentialsProvider(basicCredentialsProvider)));
+
+			Optional<BasicCredentialsProvider> basicCredentialsProvider = Optional.ofNullable(properties.getUsername())
+				.map(username -> createBasicCredentialsProvider(httpHosts, username,
+						Objects.requireNonNull(properties.getPassword(), "password is required")));
+
+			var transportBuilder = ApacheHttpClient5TransportBuilder.builder(httpHosts);
+			transportBuilder.setHttpClientConfigCallback(httpClientBuilder -> {
+				basicCredentialsProvider.ifPresent(httpClientBuilder::setDefaultCredentialsProvider);
+				httpClientBuilder.setConnectionManager(createConnectionManager(properties, sslBundles));
+				httpClientBuilder.setDefaultRequestConfig(createRequestConfig(properties));
+				return httpClientBuilder;
+			});
+			String pathPrefix = properties.getPathPrefix();
+			if (StringUtils.hasText(pathPrefix)) {
+				transportBuilder.setPathPrefix(pathPrefix);
+			}
+
 			return new OpenSearchClient(transportBuilder.build());
 		}
 
-		private BasicCredentialsProvider createBasicCredentialsProvider(HttpHost httpHost, String username,
+		private AsyncClientConnectionManager createConnectionManager(OpenSearchVectorStoreProperties properties,
+				Optional<SslBundles> sslBundles) {
+			var connectionManagerBuilder = PoolingAsyncClientConnectionManagerBuilder.create();
+			if (sslBundles.isPresent()) {
+				Optional.ofNullable(properties.getSslBundle())
+					.map(bundle -> sslBundles.get().getBundle(bundle))
+					.map(bundle -> ClientTlsStrategyBuilder.create()
+						.setSslContext(bundle.createSslContext())
+						.setTlsVersions(bundle.getOptions().getEnabledProtocols())
+						.build())
+					.ifPresent(connectionManagerBuilder::setTlsStrategy);
+			}
+			return connectionManagerBuilder.build();
+		}
+
+		private RequestConfig createRequestConfig(OpenSearchVectorStoreProperties properties) {
+			var requestConfigBuilder = RequestConfig.custom();
+			Optional.ofNullable(properties.getConnectionTimeout())
+				.map(Duration::toMillis)
+				.ifPresent(timeoutMillis -> requestConfigBuilder.setConnectionRequestTimeout(timeoutMillis,
+						TimeUnit.MILLISECONDS));
+			Optional.ofNullable(properties.getReadTimeout())
+				.map(Duration::toMillis)
+				.ifPresent(
+						timeoutMillis -> requestConfigBuilder.setResponseTimeout(timeoutMillis, TimeUnit.MILLISECONDS));
+			return requestConfigBuilder.build();
+		}
+
+		private BasicCredentialsProvider createBasicCredentialsProvider(HttpHost[] httpHosts, String username,
 				String password) {
 			BasicCredentialsProvider basicCredentialsProvider = new BasicCredentialsProvider();
-			basicCredentialsProvider.setCredentials(new AuthScope(httpHost),
-					new UsernamePasswordCredentials(username, password.toCharArray()));
+			for (HttpHost httpHost : httpHosts) {
+				basicCredentialsProvider.setCredentials(new AuthScope(httpHost),
+						new UsernamePasswordCredentials(username, password.toCharArray()));
+			}
 			return basicCredentialsProvider;
 		}
 
@@ -159,14 +213,25 @@ public class OpenSearchVectorStoreAutoConfiguration {
 
 		@Bean
 		@ConditionalOnMissingBean
-		OpenSearchClient openSearchClient(OpenSearchVectorStoreProperties properties,
+		OpenSearchClient openSearchClient(OpenSearchVectorStoreProperties properties, Optional<SslBundles> sslBundles,
 				AwsOpenSearchConnectionDetails connectionDetails, AwsSdk2TransportOptions options) {
 			Region region = Region.of(connectionDetails.getRegion());
 
-			SdkHttpClient httpClient = ApacheHttpClient.builder().build();
-			OpenSearchTransport transport = new AwsSdk2Transport(httpClient,
-					connectionDetails.getHost(properties.getAws().getDomainName()),
-					properties.getAws().getServiceName(), region, options);
+			var httpClientBuilder = ApacheHttpClient.builder();
+			Optional.ofNullable(properties.getConnectionTimeout()).ifPresent(httpClientBuilder::connectionTimeout);
+			Optional.ofNullable(properties.getReadTimeout()).ifPresent(httpClientBuilder::socketTimeout);
+			if (sslBundles.isPresent()) {
+				Optional.ofNullable(properties.getSslBundle())
+					.map(bundle -> sslBundles.get().getBundle(bundle))
+					.ifPresent(bundle -> httpClientBuilder
+						.tlsKeyManagersProvider(() -> bundle.getManagers().getKeyManagers())
+						.tlsTrustManagersProvider(() -> bundle.getManagers().getTrustManagers()));
+			}
+			OpenSearchTransport transport = new AwsSdk2Transport(httpClientBuilder.build(),
+					Objects.requireNonNull(connectionDetails.getHost(properties.getAws().getDomainName()),
+							"hostname is required"),
+					Objects.requireNonNull(properties.getAws().getServiceName(), "serviceName is required"), region,
+					options);
 			return new OpenSearchClient(transport);
 		}
 
@@ -195,12 +260,12 @@ public class OpenSearchVectorStoreAutoConfiguration {
 		}
 
 		@Override
-		public String getUsername() {
+		public @Nullable String getUsername() {
 			return this.properties.getUsername();
 		}
 
 		@Override
-		public String getPassword() {
+		public @Nullable String getPassword() {
 			return this.properties.getPassword();
 		}
 
@@ -215,22 +280,22 @@ public class OpenSearchVectorStoreAutoConfiguration {
 		}
 
 		@Override
-		public String getRegion() {
+		public @Nullable String getRegion() {
 			return this.aws.getRegion();
 		}
 
 		@Override
-		public String getAccessKey() {
+		public @Nullable String getAccessKey() {
 			return this.aws.getAccessKey();
 		}
 
 		@Override
-		public String getSecretKey() {
+		public @Nullable String getSecretKey() {
 			return this.aws.getSecretKey();
 		}
 
 		@Override
-		public String getHost(String domainName) {
+		public @Nullable String getHost(@Nullable String domainName) {
 			if (StringUtils.hasText(domainName)) {
 				return "%s.%s".formatted(this.aws.getDomainName(), this.aws.getHost());
 			}

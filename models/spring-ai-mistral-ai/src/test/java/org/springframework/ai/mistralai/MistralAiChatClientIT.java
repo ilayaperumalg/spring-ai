@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -123,7 +123,7 @@ class MistralAiChatClientIT {
 		List<ActorsFilms> actorsFilms = ChatClient.create(this.chatModel).prompt()
 				.user("Generate the filmography of 5 movies for Tom Hanks and Bill Murray.")
 				.call()
-				.entity(new ParameterizedTypeReference<List<ActorsFilms>>() {
+				.entity(new ParameterizedTypeReference<>() {
 				});
 		// @formatter:on
 
@@ -156,7 +156,7 @@ class MistralAiChatClientIT {
 				.user(u -> u.text("Provide me a List of {subject}")
 						.param("subject", "an array of numbers from 1 to 9 under they key name 'numbers'"))
 				.call()
-				.entity(new ParameterizedTypeReference<Map<String, Object>>() {
+				.entity(new ParameterizedTypeReference<>() {
 				});
 		// @formatter:on
 
@@ -226,7 +226,7 @@ class MistralAiChatClientIT {
 
 		// @formatter:off
 		String response = ChatClient.create(this.chatModel).prompt()
-				.options(MistralAiChatOptions.builder().model(MistralAiApi.ChatModel.SMALL).toolChoice(ToolChoice.AUTO).build())
+				.options(MistralAiChatOptions.builder().model(MistralAiApi.ChatModel.MISTRAL_SMALL).toolChoice(ToolChoice.AUTO))
 				.user(u -> u.text("What's the weather like in San Francisco, Tokyo, and Paris? Use parallel function calling if required. Response should be in Celsius."))
 				.toolCallbacks(FunctionToolCallback.builder("getCurrentWeather", new MockWeatherService())
 					.description("Get the weather in location")
@@ -248,7 +248,7 @@ class MistralAiChatClientIT {
 
 		// @formatter:off
 		String response = ChatClient.builder(this.chatModel)
-				.defaultOptions(MistralAiChatOptions.builder().model(MistralAiApi.ChatModel.SMALL).build())
+				.defaultOptions(MistralAiChatOptions.builder().model(MistralAiApi.ChatModel.MISTRAL_SMALL))
 				.defaultToolCallbacks(FunctionToolCallback.builder("getCurrentWeather", new MockWeatherService())
 					.description("Get the weather in location")
 					.inputType(MockWeatherService.Request.class)
@@ -270,7 +270,7 @@ class MistralAiChatClientIT {
 
 		// @formatter:off
 		Flux<String> response = ChatClient.create(this.chatModel).prompt()
-				.options(MistralAiChatOptions.builder().model(MistralAiApi.ChatModel.SMALL).build())
+				.options(MistralAiChatOptions.builder().model(MistralAiApi.ChatModel.MISTRAL_SMALL))
 				.user("What's the weather like in San Francisco, Tokyo, and Paris? Use parallel function calling if required. Response should be in Celsius.")
 				.toolCallbacks(FunctionToolCallback.builder("getCurrentWeather", new MockWeatherService())
 					.description("Get the weather in location")
@@ -291,11 +291,11 @@ class MistralAiChatClientIT {
 	@Test
 	void validateCallResponseMetadata() {
 		// String model = MistralAiApi.ChatModel.OPEN_MISTRAL_7B.getName();
-		String model = MistralAiApi.ChatModel.PIXTRAL.getName();
+		String model = MistralAiApi.ChatModel.PIXTRAL_12B.getName();
 		// String model = MistralAiApi.ChatModel.PIXTRAL_LARGE.getName();
 		// @formatter:off
 		ChatResponse response = ChatClient.create(this.chatModel).prompt()
-				.options(MistralAiChatOptions.builder().model(model).build())
+				.options(MistralAiChatOptions.builder().model(model))
 				.user("Tell me about 3 famous pirates from the Golden Age of Piracy and what they did")
 				.call()
 				.chatResponse();

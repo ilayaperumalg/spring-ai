@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,22 @@
 
 package org.springframework.ai.integration.tests.client.advisor;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import reactor.core.publisher.Flux;
+
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentReader;
 import org.springframework.ai.integration.tests.TestApplication;
-import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openaisdk.OpenAiSdkChatModel;
+import org.springframework.ai.openaisdk.OpenAiSdkChatOptions;
 import org.springframework.ai.reader.markdown.MarkdownDocumentReader;
 import org.springframework.ai.reader.markdown.config.MarkdownDocumentReaderConfig;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
@@ -36,10 +39,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.Resource;
-import reactor.core.publisher.Flux;
-
-import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,13 +47,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  */
 @SpringBootTest(classes = TestApplication.class)
-@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".*")
+@EnabledIfEnvironmentVariable(named = "OPENAI_API_KEY", matches = ".+")
 public class QuestionAnswerAdvisorStreamIT {
 
 	private List<Document> knowledgeBaseDocuments;
 
 	@Autowired
-	OpenAiChatModel openAiChatModel;
+	OpenAiSdkChatModel openAiChatModel;
 
 	@Autowired
 	PgVectorStore pgVectorStore;
@@ -87,7 +86,7 @@ public class QuestionAnswerAdvisorStreamIT {
 			.build()
 			.prompt(question)
 			.advisors(qaAdvisor)
-			.options(OpenAiChatOptions.builder().streamUsage(true).build())
+			.options(OpenAiSdkChatOptions.builder().streamUsage(true))
 			.stream()
 			.content();
 

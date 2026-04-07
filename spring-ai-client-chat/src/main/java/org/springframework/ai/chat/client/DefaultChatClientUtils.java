@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,17 @@
 
 package org.springframework.ai.chat.client;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.Prompt.Builder;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
@@ -28,20 +34,18 @@ import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
  * Utilities for supporting the {@link DefaultChatClient} implementation.
  *
  * @author Thomas Vitale
+ * @author Sun Yuhan
  * @since 1.0.0
  */
-class DefaultChatClientUtils {
+final class DefaultChatClientUtils {
+
+	private DefaultChatClientUtils() {
+		// prevents instantiation
+	}
 
 	static ChatClientRequest toChatClientRequest(DefaultChatClient.DefaultChatClientRequestSpec inputRequest) {
 		Assert.notNull(inputRequest, "inputRequest cannot be null");
@@ -63,7 +67,10 @@ class DefaultChatClientUtils {
 					.build()
 					.render();
 			}
-			processedMessages.add(new SystemMessage(processedSystemText));
+			processedMessages.add(SystemMessage.builder()
+				.text(processedSystemText)
+				.metadata(inputRequest.getSystemMetadata())
+				.build());
 		}
 
 		// Messages => In the middle of the list
@@ -71,7 +78,7 @@ class DefaultChatClientUtils {
 			processedMessages.addAll(inputRequest.getMessages());
 		}
 
-		// User Test => Last in the list
+		// User Text => Last in the list
 		String processedUserText = inputRequest.getUserText();
 		if (StringUtils.hasText(processedUserText)) {
 			if (!CollectionUtils.isEmpty(inputRequest.getUserParams())) {
@@ -82,39 +89,51 @@ class DefaultChatClientUtils {
 					.build()
 					.render();
 			}
-			processedMessages.add(UserMessage.builder().text(processedUserText).media(inputRequest.getMedia()).build());
+			processedMessages.add(UserMessage.builder()
+				.text(processedUserText)
+				.media(inputRequest.getMedia())
+				.metadata(inputRequest.getUserMetadata())
+				.build());
 		}
 
 		/*
 		 * ==========* OPTIONS * ==========
 		 */
 
-		ChatOptions processedChatOptions = inputRequest.getChatOptions();
-		if (processedChatOptions instanceof ToolCallingChatOptions toolCallingChatOptions) {
-			if (!inputRequest.getToolNames().isEmpty()) {
-				Set<String> toolNames = ToolCallingChatOptions
-					.mergeToolNames(new HashSet<>(inputRequest.getToolNames()), toolCallingChatOptions.getToolNames());
-				toolCallingChatOptions.setToolNames(toolNames);
-			}
-			if (!inputRequest.getToolCallbacks().isEmpty()) {
-				List<ToolCallback> toolCallbacks = ToolCallingChatOptions
-					.mergeToolCallbacks(inputRequest.getToolCallbacks(), toolCallingChatOptions.getToolCallbacks());
-				ToolCallingChatOptions.validateToolCallbacks(toolCallbacks);
-				toolCallingChatOptions.setToolCallbacks(toolCallbacks);
-			}
-			if (!CollectionUtils.isEmpty(inputRequest.getToolContext())) {
-				Map<String, Object> toolContext = ToolCallingChatOptions.mergeToolContext(inputRequest.getToolContext(),
-						toolCallingChatOptions.getToolContext());
-				toolCallingChatOptions.setToolContext(toolContext);
-			}
+		ChatOptions.Builder<?> builder = inputRequest.getChatModel().getDefaultOptions().mutate();
+		if (inputRequest.getOptionsCustomizer() != null) {
+			builder = builder.combineWith(inputRequest.getOptionsCustomizer());
 		}
+
+		if (builder instanceof ToolCallingChatOptions.Builder<?> tbuilder) {
+			if (!inputRequest.getToolNames().isEmpty()) {
+				tbuilder.toolNames(new HashSet<>(inputRequest.getToolNames()));
+			}
+			List<ToolCallback> toolCallbacks = new ArrayList<>(inputRequest.getToolCallbacks());
+			for (var provider : inputRequest.getToolCallbackProviders()) {
+				toolCallbacks.addAll(java.util.List.of(provider.getToolCallbacks()));
+			}
+
+			if (!toolCallbacks.isEmpty()) {
+				ToolCallingChatOptions.validateToolCallbacks(toolCallbacks);
+				tbuilder.toolCallbacks(toolCallbacks);
+			}
+
+			if (!inputRequest.getToolContext().isEmpty()) {
+				tbuilder.toolContext(inputRequest.getToolContext());
+			}
+
+		}
+
+		ChatOptions processedChatOptions = builder.build();
 
 		/*
 		 * ==========* REQUEST * ==========
 		 */
 
+		Builder promptBuilder = Prompt.builder().messages(processedMessages).chatOptions(processedChatOptions);
 		return ChatClientRequest.builder()
-			.prompt(Prompt.builder().messages(processedMessages).chatOptions(processedChatOptions).build())
+			.prompt(promptBuilder.build())
 			.context(new ConcurrentHashMap<>(inputRequest.getAdvisorParams()))
 			.build();
 	}

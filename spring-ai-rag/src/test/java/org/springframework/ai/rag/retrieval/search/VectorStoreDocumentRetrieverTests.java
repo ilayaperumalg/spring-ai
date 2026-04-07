@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ class VectorStoreDocumentRetrieverTests {
 	@Test
 	void whenVectorStoreIsNullThenThrow() {
 		assertThatThrownBy(() -> VectorStoreDocumentRetriever.builder().vectorStore(null).build())
-			.isInstanceOf(IllegalArgumentException.class)
+			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("vectorStore cannot be null");
 	}
 
@@ -232,6 +232,32 @@ class VectorStoreDocumentRetrieverTests {
 		assertThat(searchRequest.getTopK()).isEqualTo(SearchRequest.DEFAULT_TOP_K);
 		assertThat(searchRequest.getFilterExpression())
 			.isEqualTo(new FilterExpressionBuilder().eq("location", "Rivendell").build());
+	}
+
+	@Test
+	void retrieveWithQueryObjectAndFilterExpressionObject() {
+		var mockVectorStore = mock(VectorStore.class);
+		var documentRetriever = VectorStoreDocumentRetriever.builder().vectorStore(mockVectorStore).build();
+
+		// Create a Filter.Expression object directly
+		var filterExpression = new Filter.Expression(EQ, new Filter.Key("location"), new Filter.Value("Rivendell"));
+
+		var query = Query.builder()
+			.text("test query")
+			.context(Map.of(VectorStoreDocumentRetriever.FILTER_EXPRESSION, filterExpression))
+			.build();
+		documentRetriever.retrieve(query);
+
+		// Verify the mock interaction
+		var searchRequestCaptor = ArgumentCaptor.forClass(SearchRequest.class);
+		verify(mockVectorStore).similaritySearch(searchRequestCaptor.capture());
+
+		// Verify the search request
+		var searchRequest = searchRequestCaptor.getValue();
+		assertThat(searchRequest.getQuery()).isEqualTo("test query");
+		assertThat(searchRequest.getSimilarityThreshold()).isEqualTo(SearchRequest.SIMILARITY_THRESHOLD_ACCEPT_ALL);
+		assertThat(searchRequest.getTopK()).isEqualTo(SearchRequest.DEFAULT_TOP_K);
+		assertThat(searchRequest.getFilterExpression()).isEqualTo(filterExpression);
 	}
 
 	static final class TenantContextHolder {

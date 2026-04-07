@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,19 @@
 
 package org.springframework.ai.openai.api;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.ai.model.ApiKey;
 import org.springframework.ai.model.NoopApiKey;
 import org.springframework.ai.model.SimpleApiKey;
 import org.springframework.ai.openai.api.common.OpenAiApiConstants;
 import org.springframework.ai.retry.RetryUtils;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.Assert;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestClient;
 
@@ -39,37 +37,53 @@ import org.springframework.web.client.RestClient;
  *
  * @author Ahmed Yousri
  * @author Ilayaperumal Gopinathan
+ * @author Filip Hrisafov
  * @see <a href=
  * "https://platform.openai.com/docs/api-reference/moderations">https://platform.openai.com/docs/api-reference/moderations</a>
  */
 public class OpenAiModerationApi {
 
-	public static final String DEFAULT_MODERATION_MODEL = "text-moderation-latest";
+	public static final String DEFAULT_MODERATION_MODEL = "omni-moderation-latest";
 
-	private static final String DEFAULT_BASE_URL = "https://api.openai.com";
+	private final String moderationPath;
 
 	private final RestClient restClient;
-
-	private final ObjectMapper objectMapper;
 
 	/**
 	 * Create a new OpenAI Moderation API with the provided base URL.
 	 * @param baseUrl the base URL for the OpenAI API.
 	 * @param apiKey OpenAI apiKey.
+	 * @param moderationPath The path to the moderation endpoint.
 	 * @param restClientBuilder the rest client builder to use.
 	 */
-	public OpenAiModerationApi(String baseUrl, ApiKey apiKey, MultiValueMap<String, String> headers,
+	public OpenAiModerationApi(String baseUrl, ApiKey apiKey, String moderationPath, HttpHeaders headers,
 			RestClient.Builder restClientBuilder, ResponseErrorHandler responseErrorHandler) {
+		this.moderationPath = moderationPath;
 
-		this.objectMapper = new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+		// @formatter:off
+		this.restClient = restClientBuilder.clone()
+			.baseUrl(baseUrl)
+			.defaultHeaders(h -> {
+				h.setContentType(MediaType.APPLICATION_JSON);
+				h.addAll(HttpHeaders.readOnlyHttpHeaders(headers));
+			})
+			.defaultStatusHandler(responseErrorHandler)
+			.defaultRequest(requestHeadersSpec -> {
+				if (!(apiKey instanceof NoopApiKey)) {
+					requestHeadersSpec.header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey.getValue());
+				}
+			})
+			.build(); // @formatter:on
+	}
 
-		this.restClient = restClientBuilder.baseUrl(baseUrl).defaultHeaders(h -> {
-			if (!(apiKey instanceof NoopApiKey)) {
-				h.setBearerAuth(apiKey.getValue());
-			}
-			h.setContentType(MediaType.APPLICATION_JSON);
-			h.addAll(headers);
-		}).defaultStatusHandler(responseErrorHandler).build();
+	/**
+	 * Create a new OpenAI Moderation API with the provided rest client.
+	 * @param moderationPath The path to the moderation endpoint.
+	 * @param restClient the rest client instance to use.
+	 */
+	public OpenAiModerationApi(String moderationPath, RestClient restClient) {
+		this.moderationPath = moderationPath;
+		this.restClient = restClient;
 	}
 
 	public ResponseEntity<OpenAiModerationResponse> createModeration(OpenAiModerationRequest openAiModerationRequest) {
@@ -77,7 +91,7 @@ public class OpenAiModerationApi {
 		Assert.hasLength(openAiModerationRequest.prompt(), "Prompt cannot be empty.");
 
 		return this.restClient.post()
-			.uri("v1/moderations")
+			.uri(this.moderationPath)
 			.body(openAiModerationRequest)
 			.retrieve()
 			.toEntity(OpenAiModerationResponse.class);
@@ -100,6 +114,7 @@ public class OpenAiModerationApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record OpenAiModerationResponse(
 			@JsonProperty("id") String id,
 			@JsonProperty("model") String model,
@@ -108,6 +123,7 @@ public class OpenAiModerationApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record OpenAiModerationResult(
 			@JsonProperty("flagged") boolean flagged,
 			@JsonProperty("categories") Categories categories,
@@ -116,6 +132,7 @@ public class OpenAiModerationApi {
 	}
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record Categories(
 			@JsonProperty("sexual") boolean sexual,
 			@JsonProperty("hate") boolean hate,
@@ -131,6 +148,8 @@ public class OpenAiModerationApi {
 
 	}
 
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record CategoryScores(
 			@JsonProperty("sexual") double sexual,
 			@JsonProperty("hate") double hate,
@@ -145,9 +164,10 @@ public class OpenAiModerationApi {
 			@JsonProperty("violence") double violence) {
 
 	}
-	// @formatter:onn
+	// @formatter:on
 
 	@JsonInclude(JsonInclude.Include.NON_NULL)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public record Data(@JsonProperty("url") String url, @JsonProperty("b64_json") String b64Json,
 			@JsonProperty("revised_prompt") String revisedPrompt) {
 
@@ -156,13 +176,17 @@ public class OpenAiModerationApi {
 	/**
 	 * Builder to construct {@link OpenAiModerationApi} instance.
 	 */
-	public static class Builder {
+	public static final class Builder {
+
+		private static final String DEFAULT_MODERATION_PATH = "/v1/moderations";
 
 		private String baseUrl = OpenAiApiConstants.DEFAULT_BASE_URL;
 
 		private ApiKey apiKey;
 
-		private MultiValueMap<String, String> headers = new LinkedMultiValueMap<>();
+		private String moderationPath = DEFAULT_MODERATION_PATH;
+
+		private HttpHeaders headers = new HttpHeaders();
 
 		private RestClient.Builder restClientBuilder = RestClient.builder();
 
@@ -186,7 +210,13 @@ public class OpenAiModerationApi {
 			return this;
 		}
 
-		public Builder headers(MultiValueMap<String, String> headers) {
+		public Builder moderationPath(String moderationPath) {
+			Assert.hasText(moderationPath, "moderationPath cannot be null or empty");
+			this.moderationPath = moderationPath;
+			return this;
+		}
+
+		public Builder headers(HttpHeaders headers) {
 			Assert.notNull(headers, "headers cannot be null");
 			this.headers = headers;
 			return this;
@@ -206,8 +236,8 @@ public class OpenAiModerationApi {
 
 		public OpenAiModerationApi build() {
 			Assert.notNull(this.apiKey, "apiKey must be set");
-			return new OpenAiModerationApi(this.baseUrl, this.apiKey, this.headers, this.restClientBuilder,
-					this.responseErrorHandler);
+			return new OpenAiModerationApi(this.baseUrl, this.apiKey, this.moderationPath, this.headers,
+					this.restClientBuilder, this.responseErrorHandler);
 		}
 
 	}

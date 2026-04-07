@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,7 +39,6 @@ import com.oracle.bedrock.runtime.options.DisplayName;
 import com.oracle.bedrock.testsupport.junit.TestLogsExtension;
 import com.tangosol.net.Coherence;
 import com.tangosol.net.Session;
-import org.junit.Assert;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -64,6 +63,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.util.CollectionUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 @Disabled("Crashes on github actions run")
 public class CoherenceVectorStoreIT {
@@ -132,7 +132,7 @@ public class CoherenceVectorStoreIT {
 				assertThat(resultDoc.getMetadata()).containsKeys("meta2", DocumentMetadata.DISTANCE.value());
 
 				// Remove all documents from the store
-				vectorStore.delete(this.documents.stream().map(doc -> doc.getId()).toList());
+				vectorStore.delete(this.documents.stream().map(Document::getId).toList());
 
 				List<Document> results2 = vectorStore
 					.similaritySearch(SearchRequest.builder().query("Great Depression").topK(1).build());
@@ -204,15 +204,10 @@ public class CoherenceVectorStoreIT {
 
 				assertThat(results).hasSize(1);
 				assertThat(results.get(0).getId()).isEqualTo(bgDocument2.getId());
-
-				try {
-					vectorStore
-						.similaritySearch(SearchRequest.from(searchRequest).filterExpression("country == NL").build());
-					Assert.fail("Invalid filter expression should have been cached!");
-				}
-				catch (FilterExpressionTextParser.FilterExpressionParseException e) {
-					assertThat(e.getMessage()).contains("Line: 1:17, Error: no viable alternative at input 'NL'");
-				}
+				assertThatExceptionOfType(FilterExpressionTextParser.FilterExpressionParseException.class)
+					.isThrownBy(() -> vectorStore
+						.similaritySearch(SearchRequest.from(searchRequest).filterExpression("country == NL").build()))
+					.withMessageContaining("Line: 1:17, Error: no viable alternative at input 'NL'");
 
 				// Remove all documents from the store
 				truncateMap(context, ((CoherenceVectorStore) vectorStore).getMapName());
@@ -281,10 +276,15 @@ public class CoherenceVectorStoreIT {
 				.similarityThreshold(similarityThreshold)
 				.build());
 
+			// Debug: print all returned document IDs and metadata
+			for (Document doc : results) {
+				System.out.println("Returned doc ID: " + doc.getId() + ", metadata: " + doc.getMetadata());
+			}
+
 			assertThat(results).hasSize(1);
 			Document resultDoc = results.get(0);
 			assertThat(resultDoc.getId()).isEqualTo(this.documents.get(1).getId());
-			assertThat(resultDoc.getMetadata()).containsKeys("meta1", DocumentMetadata.DISTANCE.value());
+			assertThat(resultDoc.getMetadata()).containsKey(DocumentMetadata.DISTANCE.value());
 			assertThat(resultDoc.getScore()).isGreaterThanOrEqualTo(similarityThreshold);
 
 			truncateMap(context, ((CoherenceVectorStore) vectorStore).getMapName());
@@ -297,6 +297,22 @@ public class CoherenceVectorStoreIT {
 			CoherenceVectorStore vectorStore = context.getBean(CoherenceVectorStore.class);
 			Optional<Session> nativeClient = vectorStore.getNativeClient();
 			assertThat(nativeClient).isPresent();
+		});
+	}
+
+	@Test
+	public void similaritySearchReturnsMetadata() {
+		this.contextRunner.run(context -> {
+			VectorStore vectorStore = context.getBean(VectorStore.class);
+			vectorStore.add(this.documents);
+
+			// Query that matches the first document, which has meta1
+			List<Document> results = vectorStore
+				.similaritySearch(SearchRequest.builder().query("spring ai").topK(1).build());
+
+			assertThat(results).hasSize(1);
+			Document resultDoc = results.get(0);
+			assertThat(resultDoc.getMetadata()).containsKeys("meta1", DocumentMetadata.DISTANCE.value());
 		});
 	}
 

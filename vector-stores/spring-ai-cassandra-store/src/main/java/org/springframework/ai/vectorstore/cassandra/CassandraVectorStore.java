@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,16 +39,17 @@ import com.datastax.oss.driver.api.core.CqlSessionBuilder;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.BoundStatementBuilder;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
+import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.SimpleStatement;
 import com.datastax.oss.driver.api.core.data.CqlVector;
 import com.datastax.oss.driver.api.core.metadata.schema.ColumnMetadata;
+import com.datastax.oss.driver.api.core.metadata.schema.IndexMetadata;
 import com.datastax.oss.driver.api.core.metadata.schema.TableMetadata;
 import com.datastax.oss.driver.api.core.type.DataType;
 import com.datastax.oss.driver.api.core.type.DataTypes;
 import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 import com.datastax.oss.driver.api.core.type.reflect.GenericType;
-import com.datastax.oss.driver.api.querybuilder.BuildableQuery;
 import com.datastax.oss.driver.api.querybuilder.QueryBuilder;
 import com.datastax.oss.driver.api.querybuilder.SchemaBuilder;
 import com.datastax.oss.driver.api.querybuilder.delete.Delete;
@@ -59,15 +60,18 @@ import com.datastax.oss.driver.api.querybuilder.schema.AlterTableAddColumn;
 import com.datastax.oss.driver.api.querybuilder.schema.AlterTableAddColumnEnd;
 import com.datastax.oss.driver.api.querybuilder.schema.CreateTable;
 import com.datastax.oss.driver.api.querybuilder.schema.CreateTableStart;
+import com.datastax.oss.driver.api.querybuilder.select.Select;
+import com.datastax.oss.driver.api.querybuilder.select.Selector;
 import com.datastax.oss.driver.shaded.guava.common.annotations.VisibleForTesting;
 import com.datastax.oss.driver.shaded.guava.common.base.Preconditions;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentMetadata;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.embedding.EmbeddingOptionsBuilder;
+import org.springframework.ai.embedding.EmbeddingOptions;
 import org.springframework.ai.model.EmbeddingUtils;
 import org.springframework.ai.observation.conventions.VectorStoreProvider;
 import org.springframework.ai.observation.conventions.VectorStoreSimilarityMetric;
@@ -95,7 +99,7 @@ import org.springframework.util.Assert;
  *
  * A schema matching the configuration is automatically created if it doesn't exist.
  * Missing columns and indexes in existing tables will also be automatically created.
- * Disable this with the CassandraBuilder#disallowSchemaChanges().
+ * Disable this with the CassandraBuilder#initializeSchema(boolean) method().
  *
  * <p>
  * Basic usage example:
@@ -139,7 +143,7 @@ import org.springframework.util.Assert;
  *     .contentColumnName("text")
  *     .embeddingColumnName("vector")
  *     .fixedThreadPoolExecutorSize(32)
- *     .disallowSchemaChanges(false)
+ *     .initializeSchema(true)
  *     .batchingStrategy(new TokenCountBatchingStrategy())
  *     .build();
  * }</pre>
@@ -190,8 +194,6 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 	public static final String DRIVER_PROFILE_SEARCH = "spring-ai-search";
 
-	private static final String QUERY_FORMAT = "select %s,%s,%s%s from %s.%s ? order by %s ann of ? limit ?";
-
 	private static final Logger logger = LoggerFactory.getLogger(CassandraVectorStore.class);
 
 	private static final Map<Similarity, VectorStoreSimilarityMetric> SIMILARITY_TYPE_MAPPING = Map.of(
@@ -202,7 +204,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 	private final Schema schema;
 
-	private final boolean disallowSchemaChanges;
+	private final boolean initializeSchema;
 
 	private final FilterExpressionConverter filterExpressionConverter;
 
@@ -218,8 +220,6 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 	private final PreparedStatement deleteStmt;
 
-	private final String similarityStmt;
-
 	private final Similarity similarity;
 
 	protected CassandraVectorStore(Builder builder) {
@@ -229,7 +229,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 		this.session = builder.session;
 		this.schema = builder.buildSchema();
-		this.disallowSchemaChanges = builder.disallowSchemaChanges;
+		this.initializeSchema = builder.initializeSchema;
 		this.documentIdTranslator = builder.documentIdTranslator;
 		this.primaryKeyTranslator = builder.primaryKeyTranslator;
 		this.executor = Executors.newFixedThreadPool(builder.fixedThreadPoolExecutorSize);
@@ -246,7 +246,6 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 			.get();
 
 		this.similarity = getIndexSimilarity(cassandraMetadata);
-		this.similarityStmt = similaritySearchStatement();
 
 		this.filterExpressionConverter = builder.filterExpressionConverter != null ? builder.filterExpressionConverter
 				: new CassandraFilterExpressionConverter(cassandraMetadata.getColumns().values());
@@ -269,7 +268,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 	public void doAdd(List<Document> documents) {
 		var futures = new CompletableFuture[documents.size()];
 
-		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptionsBuilder.builder().build(),
+		List<float[]> embeddings = this.embeddingModel.embed(documents, EmbeddingOptions.builder().build(),
 				this.batchingStrategy);
 
 		int i = 0;
@@ -352,21 +351,13 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		Preconditions.checkArgument(request.getTopK() <= 1000);
 		var embedding = toFloatArray(this.embeddingModel.embed(request.getQuery()));
 		CqlVector<Float> cqlVector = CqlVector.newInstance(embedding);
+		String cql = createSimilaritySearchCql(request, cqlVector, request.getTopK());
 
-		String whereClause = "";
-		if (request.hasFilterExpression()) {
-			String expression = this.filterExpressionConverter.convertExpression(request.getFilterExpression());
-			if (!expression.isBlank()) {
-				whereClause = String.format("where %s", expression);
-			}
-		}
-
-		String query = String.format(this.similarityStmt, cqlVector, whereClause, cqlVector, request.getTopK());
 		List<Document> documents = new ArrayList<>();
-		logger.trace("Executing {}", query);
-		SimpleStatement s = SimpleStatement.newInstance(query).setExecutionProfileName(DRIVER_PROFILE_SEARCH);
+		ResultSet result = this.session
+			.execute(SimpleStatement.newInstance(cql).setExecutionProfileName(DRIVER_PROFILE_SEARCH));
 
-		for (Row row : this.session.execute(s)) {
+		for (Row row : result) {
 			float score = row.getFloat(0);
 			if (score < request.getSimilarityThreshold()) {
 				break;
@@ -397,11 +388,16 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 	private Similarity getIndexSimilarity(TableMetadata metadata) {
 
-		return Similarity.valueOf(metadata.getIndex(this.schema.index())
-			.get()
-			.getOptions()
-			.getOrDefault("similarity_function", "COSINE")
-			.toUpperCase());
+		Optional<IndexMetadata> indexMetadata = metadata.getIndex(this.schema.index());
+
+		if (indexMetadata.isEmpty()) {
+			throw new IllegalStateException(
+					String.format("Index %s does not exist in table %s", this.schema.index(), this.schema.table));
+		}
+
+		return Similarity
+			.valueOf(indexMetadata.get().getOptions().getOrDefault("similarity_function", "COSINE").toUpperCase());
+
 	}
 
 	private PreparedStatement prepareDeleteStatement() {
@@ -411,6 +407,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		for (var c : this.schema.partitionKeys()) {
 			stmt = (null != stmt ? stmt : stmtStart).whereColumn(c.name()).isEqualTo(QueryBuilder.bindMarker(c.name()));
 		}
+		Assert.state(stmt != null, "stmt should not be null by now");
 		for (var c : this.schema.clusteringKeys()) {
 			stmt = stmt.whereColumn(c.name()).isEqualTo(QueryBuilder.bindMarker(c.name()));
 		}
@@ -435,6 +432,7 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 			for (var c : this.schema.partitionKeys()) {
 				stmt = (null != stmt ? stmt : stmtStart).value(c.name(), QueryBuilder.bindMarker(c.name()));
 			}
+			Assert.state(stmt != null, "stmt should not be null by now");
 			for (var c : this.schema.clusteringKeys()) {
 				stmt = stmt.value(c.name(), QueryBuilder.bindMarker(c.name()));
 			}
@@ -449,34 +447,35 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		});
 	}
 
-	private String similaritySearchStatement() {
-		StringBuilder ids = new StringBuilder();
-		for (var m : this.schema.partitionKeys()) {
-			ids.append(m.name()).append(',');
-		}
-		for (var m : this.schema.clusteringKeys()) {
-			ids.append(m.name()).append(',');
-		}
-		ids.deleteCharAt(ids.length() - 1);
+	private String createSimilaritySearchCql(SearchRequest request, CqlVector<Float> cqlVector, int topK) {
 
-		String similarityFunction = new StringBuilder("similarity_").append(this.similarity.toString().toLowerCase())
-			.append('(')
-			.append(this.schema.embedding())
-			.append(",?)")
-			.toString();
+		Select stmt = QueryBuilder.selectFrom(this.schema.keyspace(), this.schema.table())
+			.function("similarity_" + this.similarity.toString().toLowerCase(),
+					Selector.column(this.schema.embedding()), QueryBuilder.literal(cqlVector));
 
-		StringBuilder extraSelectFields = new StringBuilder();
+		for (var c : this.schema.partitionKeys()) {
+			stmt = stmt.column(c.name());
+		}
+		for (var c : this.schema.clusteringKeys()) {
+			stmt = stmt.column(c.name());
+		}
+		stmt = stmt.column(this.schema.content());
 		for (var m : this.schema.metadataColumns()) {
-			extraSelectFields.append(',').append(m.name());
+			stmt = stmt.column(m.name());
 		}
+		stmt = stmt.column(this.schema.embedding());
 
-		// java-driver-query-builder doesn't support orderByAnnOf yet
-		String query = String.format(QUERY_FORMAT, similarityFunction, ids.toString(), this.schema.content(),
-				extraSelectFields.toString(), this.schema.keyspace(), this.schema.table(), this.schema.embedding());
-
-		query = query.replace("?", "%s");
-		logger.debug("preparing {}", query);
-		return query;
+		// the filterExpression is a string so we go back to building a CQL string
+		String whereClause = "";
+		if (request.hasFilterExpression()) {
+			Assert.state(request.getFilterExpression() != null, "filter expression assumed to be non-null");
+			String expression = this.filterExpressionConverter.convertExpression(request.getFilterExpression());
+			if (!expression.isBlank()) {
+				whereClause = String.format(" WHERE %s", expression);
+			}
+		}
+		String cql = stmt.orderByAnnOf(this.schema.embedding(), cqlVector).limit(topK).asCql();
+		return cql.replace(" ORDER ", whereClause + " ORDER ");
 	}
 
 	private String getDocumentId(Row row) {
@@ -521,11 +520,12 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 	@VisibleForTesting
 	static void dropKeyspace(Builder builder) {
 		Preconditions.checkState(builder.keyspace.startsWith("test_"), "Only test keyspaces can be dropped");
+		Assert.state(builder.session != null, "builder.session should not be null");
 		builder.session.execute(SchemaBuilder.dropKeyspace(builder.keyspace).ifExists().build());
 	}
 
 	void ensureSchemaExists(int vectorDimension) {
-		if (!this.disallowSchemaChanges) {
+		if (this.initializeSchema) {
 			SchemaUtil.ensureKeyspaceExists(this.session, this.schema.keyspace);
 			ensureTableExists(vectorDimension);
 			ensureTableColumnsExist(vectorDimension);
@@ -553,6 +553,9 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 			.get()
 			.getTable(this.schema.table)
 			.get();
+
+		Preconditions.checkState(tableMetadata.getIndex(this.schema.index()).isPresent(), "index %s does not exist",
+				this.schema.index());
 
 		Preconditions.checkState(tableMetadata.getColumn(this.schema.content).isPresent(), "column %s does not exist",
 				this.schema.content);
@@ -618,29 +621,20 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 				createTable = (null != createTable ? createTable : createTableStart).withPartitionKey(partitionKey.name,
 						partitionKey.type);
 			}
+			Assert.state(createTable != null, "createTable should be non-null by now");
 			for (SchemaColumn clusteringKey : this.schema.clusteringKeys) {
 				createTable = createTable.withClusteringColumn(clusteringKey.name, clusteringKey.type);
 			}
 
-			createTable = createTable.withColumn(this.schema.content, DataTypes.TEXT);
+			createTable = createTable.withColumn(this.schema.content, DataTypes.TEXT)
+				.withColumn(this.schema.embedding, DataTypes.vectorOf(DataTypes.FLOAT, vectorDimension));
 
 			for (SchemaColumn metadata : this.schema.metadataColumns) {
 				createTable = createTable.withColumn(metadata.name(), metadata.type());
 			}
 
-			// https://datastax-oss.atlassian.net/browse/JAVA-3118
-			// .withColumn(config.embedding, new DefaultVectorType(DataTypes.FLOAT,
-			// vectorDimension));
-
-			StringBuilder tableStmt = new StringBuilder(createTable.asCql());
-			tableStmt.setLength(tableStmt.length() - 1);
-			tableStmt.append(',')
-				.append(this.schema.embedding)
-				.append(" vector<float,")
-				.append(vectorDimension)
-				.append(">)");
-			logger.debug("Executing {}", tableStmt.toString());
-			this.session.execute(tableStmt.toString());
+			logger.debug("Executing {}", createTable.asCql());
+			this.session.execute(createTable.build());
 		}
 	}
 
@@ -678,28 +672,12 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 				alterTable = alterTable.addColumn(this.schema.content, DataTypes.TEXT);
 			}
 			if (addEmbedding) {
-				// special case for embedding column, bc JAVA-3118, as above
-				StringBuilder alterTableStmt = new StringBuilder(((BuildableQuery) alterTable).asCql());
-				if (newColumns.isEmpty() && !addContent) {
-					alterTableStmt.append(" ADD (");
-				}
-				else {
-					alterTableStmt.setLength(alterTableStmt.length() - 1);
-					alterTableStmt.append(',');
-				}
-				alterTableStmt.append(this.schema.embedding)
-					.append(" vector<float,")
-					.append(vectorDimension)
-					.append(">)");
-
-				logger.debug("Executing {}", alterTableStmt.toString());
-				this.session.execute(alterTableStmt.toString());
+				alterTable = alterTable.addColumn(this.schema.embedding,
+						DataTypes.vectorOf(DataTypes.FLOAT, vectorDimension));
 			}
-			else {
-				SimpleStatement stmt = ((AlterTableAddColumnEnd) alterTable).build();
-				logger.debug("Executing {}", stmt.getQuery());
-				this.session.execute(stmt);
-			}
+			SimpleStatement stmt = ((AlterTableAddColumnEnd) alterTable).build();
+			logger.debug("Executing {}", stmt.getQuery());
+			this.session.execute(stmt);
 		}
 	}
 
@@ -783,9 +761,9 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 	 */
 	public static class Builder extends AbstractVectorStoreBuilder<Builder> {
 
-		private CqlSession session;
+		private @Nullable CqlSession session;
 
-		private CqlSessionBuilder sessionBuilder;
+		private @Nullable CqlSessionBuilder sessionBuilder;
 
 		private boolean closeSessionOnClose;
 
@@ -797,19 +775,19 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 		private List<SchemaColumn> clusteringKeys = List.of();
 
-		private String indexName;
+		private @Nullable String indexName;
 
 		private String contentColumnName = DEFAULT_CONTENT_COLUMN_NAME;
 
 		private String embeddingColumnName = DEFAULT_EMBEDDING_COLUMN_NAME;
 
-		private Set<SchemaColumn> metadataColumns = new HashSet<>();
+		private final Set<SchemaColumn> metadataColumns = new HashSet<>();
 
-		private boolean disallowSchemaChanges = false;
+		private boolean initializeSchema = true;
 
 		private int fixedThreadPoolExecutorSize = DEFAULT_ADD_CONCURRENCY;
 
-		private FilterExpressionConverter filterExpressionConverter;
+		private @Nullable FilterExpressionConverter filterExpressionConverter;
 
 		private DocumentIdTranslator documentIdTranslator = (String id) -> List.of(id);
 
@@ -820,8 +798,6 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 			Preconditions.checkArgument(1 == primaryKeyColumns.size());
 			return (String) primaryKeyColumns.get(0);
 		};
-
-		private boolean returnEmbeddings = false;
 
 		private Builder(EmbeddingModel embeddingModel) {
 			super(embeddingModel);
@@ -929,21 +905,21 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 
 		/**
 		 * Sets the index name.
-		 * @param indexName the index name
+		 * @param indexName the index name (will be auto-generated if null)
 		 * @return the builder instance
 		 */
-		public Builder indexName(String indexName) {
+		public Builder indexName(@Nullable String indexName) {
 			this.indexName = indexName;
 			return this;
 		}
 
 		/**
-		 * Sets whether to disallow schema changes.
-		 * @param disallowSchemaChanges true to disallow schema changes
+		 * Sets whether to initialize the schema.
+		 * @param initializeSchema true to initialize schema, false otherwise
 		 * @return the builder instance
 		 */
-		public Builder disallowSchemaChanges(boolean disallowSchemaChanges) {
-			this.disallowSchemaChanges = disallowSchemaChanges;
+		public Builder initializeSchema(boolean initializeSchema) {
+			this.initializeSchema = initializeSchema;
 			return this;
 		}
 
@@ -1013,11 +989,6 @@ public class CassandraVectorStore extends AbstractObservationVectorStore impleme
 		public Builder primaryKeyTranslator(PrimaryKeyTranslator translator) {
 			Assert.notNull(translator, "PrimaryKeyTranslator must not be null");
 			this.primaryKeyTranslator = translator;
-			return this;
-		}
-
-		public Builder returnEmbeddings(boolean returnEmbeddings) {
-			this.returnEmbeddings = true;
 			return this;
 		}
 

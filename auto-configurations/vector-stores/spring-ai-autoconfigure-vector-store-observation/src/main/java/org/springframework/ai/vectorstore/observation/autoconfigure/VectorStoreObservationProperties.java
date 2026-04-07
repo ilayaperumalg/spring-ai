@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,16 +30,16 @@ public class VectorStoreObservationProperties {
 	public static final String CONFIG_PREFIX = "spring.ai.vectorstore.observations";
 
 	/**
-	 * Whether to include the search response content in the observations.
+	 * Whether to log the search response content in the observations.
 	 */
-	private boolean includeQueryResponse = false;
+	private boolean logQueryResponse = false;
 
-	public boolean isIncludeQueryResponse() {
-		return this.includeQueryResponse;
+	public boolean isLogQueryResponse() {
+		return this.logQueryResponse;
 	}
 
-	public void setIncludeQueryResponse(boolean includeQueryResponse) {
-		this.includeQueryResponse = includeQueryResponse;
+	public void setLogQueryResponse(boolean logQueryResponse) {
+		this.logQueryResponse = logQueryResponse;
 	}
 
 }

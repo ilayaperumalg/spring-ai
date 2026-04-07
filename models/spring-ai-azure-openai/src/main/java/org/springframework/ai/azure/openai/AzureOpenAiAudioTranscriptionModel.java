@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,13 +28,13 @@ import com.azure.core.http.rest.Response;
 import org.springframework.ai.audio.transcription.AudioTranscription;
 import org.springframework.ai.audio.transcription.AudioTranscriptionPrompt;
 import org.springframework.ai.audio.transcription.AudioTranscriptionResponse;
+import org.springframework.ai.audio.transcription.TranscriptionModel;
 import org.springframework.ai.azure.openai.AzureOpenAiAudioTranscriptionOptions.GranularityType;
 import org.springframework.ai.azure.openai.AzureOpenAiAudioTranscriptionOptions.StructuredResponse;
 import org.springframework.ai.azure.openai.AzureOpenAiAudioTranscriptionOptions.StructuredResponse.Segment;
 import org.springframework.ai.azure.openai.AzureOpenAiAudioTranscriptionOptions.StructuredResponse.Word;
 import org.springframework.ai.azure.openai.AzureOpenAiAudioTranscriptionOptions.TranscriptResponseFormat;
 import org.springframework.ai.azure.openai.metadata.AzureOpenAiAudioTranscriptionResponseMetadata;
-import org.springframework.ai.model.Model;
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.core.io.Resource;
 import org.springframework.util.Assert;
@@ -47,7 +47,7 @@ import org.springframework.util.StringUtils;
  *
  * @author Piotr Olaszewski
  */
-public class AzureOpenAiAudioTranscriptionModel implements Model<AudioTranscriptionPrompt, AudioTranscriptionResponse> {
+public class AzureOpenAiAudioTranscriptionModel implements TranscriptionModel {
 
 	private static final List<AudioTranscriptionFormat> JSON_FORMATS = List.of(AudioTranscriptionFormat.JSON,
 			AudioTranscriptionFormat.VERBOSE_JSON);

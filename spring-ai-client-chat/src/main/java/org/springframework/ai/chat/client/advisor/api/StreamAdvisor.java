@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2025 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 package org.springframework.ai.chat.client.advisor.api;
 
+import reactor.core.publisher.Flux;
+
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
-import reactor.core.publisher.Flux;
 
 /**
  * Advisor for execution flows ultimately resulting in a streaming call to an AI model.

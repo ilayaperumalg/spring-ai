@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 the original author or authors.
+ * Copyright 2023-present the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,16 @@
 
 package org.springframework.ai.deepseek.chat;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 import io.micrometer.observation.tck.TestObservationRegistry;
 import io.micrometer.observation.tck.TestObservationRegistryAssert;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import reactor.core.publisher.Flux;
+
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
@@ -35,11 +40,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
-import org.springframework.retry.support.RetryTemplate;
-import reactor.core.publisher.Flux;
-
-import java.util.List;
-import java.util.stream.Collectors;
+import org.springframework.core.retry.RetryTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.ai.chat.observation.ChatModelObservationDocumentation.HighCardinalityKeyNames;
@@ -171,7 +172,7 @@ public class DeepSeekChatModelObservationIT {
 		public DeepSeekChatModel deepSeekChatModel(DeepSeekApi deepSeekApi,
 				TestObservationRegistry observationRegistry) {
 			return new DeepSeekChatModel(deepSeekApi, DeepSeekChatOptions.builder().build(),
-					ToolCallingManager.builder().build(), RetryTemplate.defaultInstance(), observationRegistry);
+					ToolCallingManager.builder().build(), new RetryTemplate(), observationRegistry);
 		}
 
 	}
