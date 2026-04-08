@@ -419,9 +419,20 @@ public class OllamaChatModel implements ChatModel {
 	}
 
 	Prompt buildRequestPrompt(Prompt prompt) {
+		OllamaChatOptions requestOptions = null;
+		if (prompt.getOptions() != null) {
+			if (prompt.getOptions() instanceof OllamaChatOptions ollamaOptions) {
+				requestOptions = ollamaOptions;
+			}
+			else {
+				requestOptions = OllamaChatOptions.builder().build();
+				requestOptions = (OllamaChatOptions) requestOptions.mutate()
+					.combineWith(prompt.getOptions().mutate())
+					.build();
+			}
+		}
 
-		var requestOptions = (OllamaChatOptions) prompt.getOptions();
-		requestOptions = requestOptions == null ? this.defaultOptions : requestOptions;
+		requestOptions = requestOptions != null ? (OllamaChatOptions) this.defaultOptions.mutate().combineWith(requestOptions.mutate()).build() : this.defaultOptions;
 
 		// Validate request options
 		if (!StringUtils.hasText(requestOptions.getModel())) {
@@ -485,9 +496,14 @@ public class OllamaChatModel implements ChatModel {
 		if (prompt.getOptions() instanceof OllamaChatOptions) {
 			requestOptions = (OllamaChatOptions) prompt.getOptions();
 		}
+		else if (prompt.getOptions() != null) {
+			requestOptions = OllamaChatOptions.builder().build();
+			requestOptions = (OllamaChatOptions) requestOptions.mutate()
+					.combineWith(prompt.getOptions().mutate())
+					.build();
+		}
 		else {
-			requestOptions = OllamaChatOptions
-				.fromOptions((OllamaChatOptions) Objects.requireNonNull(prompt.getOptions()));
+			requestOptions = OllamaChatOptions.builder().build();
 		}
 
 		String model = requestOptions.getModel();
