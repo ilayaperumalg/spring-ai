@@ -133,9 +133,10 @@ class OpenAiChatModelTests {
 			.options(options)
 			.build();
 
-		assertThatThrownBy(() -> chatModel.createRequest(new Prompt("test", options), false))
-			.isInstanceOf(UnsupportedOperationException.class)
-			.hasMessageContaining("SDK version does not support typed 'none' toolChoice");
+		ChatCompletionCreateParams request = chatModel.createRequest(new Prompt("test", options), false);
+		assertThat(request.toolChoice()).isPresent();
+		assertThat(request.toolChoice().get().isAuto()).isTrue();
+		assertThat(request.toolChoice().get().asAuto().asString()).isEqualTo("none");
 	}
 
 	@Test
@@ -147,9 +148,10 @@ class OpenAiChatModelTests {
 			.options(options)
 			.build();
 
-		assertThatThrownBy(() -> chatModel.createRequest(new Prompt("test", options), false))
-			.isInstanceOf(UnsupportedOperationException.class)
-			.hasMessageContaining("SDK version does not support typed 'required' toolChoice");
+		ChatCompletionCreateParams request = chatModel.createRequest(new Prompt("test", options), false);
+		assertThat(request.toolChoice()).isPresent();
+		assertThat(request.toolChoice().get().isAuto()).isTrue();
+		assertThat(request.toolChoice().get().asAuto().asString()).isEqualTo("required");
 	}
 
 	@Test

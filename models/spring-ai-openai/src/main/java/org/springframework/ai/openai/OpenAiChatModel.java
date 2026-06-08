@@ -790,10 +790,11 @@ public final class OpenAiChatModel implements ChatModel {
 					builder.toolChoice(ChatCompletionToolChoiceOption.ofAuto(ChatCompletionToolChoiceOption.Auto.AUTO));
 				}
 				else if (json.equals("none")) {
-					throw new UnsupportedOperationException("SDK version does not support typed 'none' toolChoice");
+					builder.toolChoice(ChatCompletionToolChoiceOption.ofAuto(ChatCompletionToolChoiceOption.Auto.NONE));
 				}
 				else if (json.equals("required")) {
-					throw new UnsupportedOperationException("SDK version does not support typed 'required' toolChoice");
+					builder.toolChoice(
+							ChatCompletionToolChoiceOption.ofAuto(ChatCompletionToolChoiceOption.Auto.REQUIRED));
 				}
 				else {
 					try {
@@ -836,13 +837,9 @@ public final class OpenAiChatModel implements ChatModel {
 				// version
 				return ChatCompletionToolChoiceOption.ofAuto(ChatCompletionToolChoiceOption.Auto.AUTO);
 			case "required":
-				// There may or may not be a 'required' option; if SDK supports, you need
-				// a way to construct it
-				// If it's not supported, you must use JSON fallback
-				throw new UnsupportedOperationException("SDK version does not support typed 'required' toolChoice");
+				return ChatCompletionToolChoiceOption.ofAuto(ChatCompletionToolChoiceOption.Auto.REQUIRED);
 			case "none":
-				// Similarly for none
-				throw new UnsupportedOperationException("SDK version does not support typed 'none' toolChoice");
+				return ChatCompletionToolChoiceOption.ofAuto(ChatCompletionToolChoiceOption.Auto.NONE);
 			default:
 				throw new IllegalArgumentException("Unknown tool_choice type: " + type);
 		}
